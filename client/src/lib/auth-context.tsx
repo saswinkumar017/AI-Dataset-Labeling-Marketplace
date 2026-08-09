@@ -1,0 +1,77 @@
+"use client";
+
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { loginRequest, meRequest, registerRequest, type BackendUser } from "./api";
+
+type AuthState = {
+  user: BackendUser | null;
+  loading: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  register: (username: string, email: string, password: string) => Promise<void>;
+  logout: () => void;
+};
+
+const AuthContext = createContext<AuthState | null>(null);
+
+function readStoredUser(): BackendUser | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem("labelmate_user");
+    return raw ? (JSON.parse(raw) as BackendUser) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<BackendUser | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const token = localStorage.getItem("labelmate_token");
+    const cached = readStoredUser();
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+    if (cached) setUser(cached);
+    meRequest()
+      .then((me) => {
+        setUser(me);
+        localStorage.setItem("labelmate_user", JSON.stringify(me));
+      })
+      .catch(() => {
+        localStorage.removeItem("labelmate_token");
+        localStorage.removeItem("labelmate_user");
+        setUser(null);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const login = useCallback(async (email: string, password: string) => {
+    const res = await loginRequest(email, password);
+    localStorage.setItem("labelmate_token", res.token);
+    localStorage.setItem("labelmate_user", JSON.stringify(res.user));
+    setUser(res.user);
+  }, []);
+
+  const register = useCallback(async (username: string, email: string, password: string) => {
+    await registerRequest(username, email, password);
+  }, []);
+
+  const logout = useCallback(() => {
+    localStorage.removeItem("labelmate_token");
+    localStorage.removeItem("labelmate_user");
+    setUser(null);
+    window.location.href = "/";
+  }, []);
+
+  const value = useMemo(() => ({ user, loading, login, register, logout }), [user, loading, login, register, logout]);
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth(): AuthState {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
+  return ctx;
+}

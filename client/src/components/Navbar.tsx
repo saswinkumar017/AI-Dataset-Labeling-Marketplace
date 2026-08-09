@@ -1,4 +1,5 @@
 import Link from "next/link";
+import NavbarUserArea from "./NavbarUserArea";
 
 export default function Navbar() {
   return (
@@ -8,10 +9,7 @@ export default function Navbar() {
           <span className="flex h-7 w-7 items-center justify-center rounded bg-zinc-900 text-sm font-bold text-white">L</span>
           LabelMate
         </Link>
-        <div className="flex items-center gap-2">
-          <Link href="/login" className="rounded-full px-4 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-100">Login</Link>
-          <Link href="/register" className="rounded-full bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800">Get Started</Link>
-        </div>
+        <NavbarUserArea />
       </div>
     </header>
   );

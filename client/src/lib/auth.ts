@@ -1,21 +1,30 @@
-export type UserRole = "annotator" | "admin";
+export type StoredUser = {
+  id: number;
+  email: string;
+  username: string;
+  role: "ADMIN" | "ANNOTATOR";
+  createdAt: string;
+};
 
-export function getRole(): UserRole | null {
+const TOKEN_KEY = "labelmate_token";
+const USER_KEY = "labelmate_user";
+
+export function getToken(): string | null {
   if (typeof window === "undefined") return null;
-  return (localStorage.getItem("labelmate_role") as UserRole | null);
+  return localStorage.getItem(TOKEN_KEY);
 }
 
-export function setRole(role: UserRole) {
-  localStorage.setItem("labelmate_role", role);
-  localStorage.setItem("labelmate_auth", "1");
+export function getStoredUser(): StoredUser | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    return raw ? (JSON.parse(raw) as StoredUser) : null;
+  } catch {
+    return null;
+  }
 }
 
-export function isAuthed(): boolean {
-  if (typeof window === "undefined") return false;
-  return localStorage.getItem("labelmate_auth") === "1";
-}
-
-export function logout() {
-  localStorage.removeItem("labelmate_auth");
-  localStorage.removeItem("labelmate_role");
+export function clearAuthStorage() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
 }
