@@ -162,4 +162,41 @@ class DatasetIntegrationTest {
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    void shouldCreateDatasetWithFileMetadata() throws Exception {
+        String token = tokenFor("Asha", "asha@example.com", "secret123");
+
+        mockMvc.perform(post("/api/datasets")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Reviews\",\"fileName\":\"reviews.csv\",\"filePath\":\"uploads/reviews.csv\",\"fileSizeBytes\":1024,\"checksumSha256\":\"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.fileName").value("reviews.csv"))
+                .andExpect(jsonPath("$.filePath").value("uploads/reviews.csv"))
+                .andExpect(jsonPath("$.fileSizeBytes").value(1024));
+    }
+
+    @Test
+    void shouldRejectUnsafeFileMetadata() throws Exception {
+        String token = tokenFor("Asha", "asha@example.com", "secret123");
+
+        mockMvc.perform(post("/api/datasets")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Reviews\",\"filePath\":\"../etc/passwd\"}"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/api/datasets")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Reviews\",\"checksumSha256\":\"not-a-hash\"}"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/api/datasets")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Reviews\",\"fileSizeBytes\":-5}"))
+                .andExpect(status().isBadRequest());
+    }
 }

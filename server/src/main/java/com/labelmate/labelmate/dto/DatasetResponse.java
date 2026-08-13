@@ -9,6 +9,10 @@ public record DatasetResponse(
         String name,
         String description,
         DatasetStatus status,
+        String fileName,
+        String filePath,
+        Long fileSizeBytes,
+        String checksumSha256,
         LocalDateTime createdAt,
         LocalDateTime updatedAt) {
 
@@ -18,6 +22,10 @@ public record DatasetResponse(
                 dataset.getName(),
                 dataset.getDescription(),
                 dataset.getStatus(),
+                dataset.getFileName(),
+                dataset.getFilePath(),
+                dataset.getFileSizeBytes(),
+                dataset.getChecksumSha256(),
                 dataset.getCreatedAt(),
                 dataset.getUpdatedAt());
     }

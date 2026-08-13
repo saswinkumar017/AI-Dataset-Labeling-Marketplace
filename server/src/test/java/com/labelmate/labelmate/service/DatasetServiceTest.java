@@ -115,4 +115,39 @@ class DatasetServiceTest {
         assertEquals("New", response.name());
         assertEquals("Updated", response.description());
     }
+
+    @Test
+    void shouldPersistFileMetadataWhenProvided() {
+        User owner = owner();
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(datasets.save(any(Dataset.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        DatasetRequest request = new DatasetRequest(
+                "Reviews", "Sentiment data", "reviews.csv", "uploads/reviews.csv", 1024L,
+                "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08");
+        DatasetResponse response = datasetService.create(request, "owner@example.com");
+
+        assertEquals("reviews.csv", response.fileName());
+        assertEquals("uploads/reviews.csv", response.filePath());
+        assertEquals(1024L, response.fileSizeBytes());
+
+        ArgumentCaptor<Dataset> saved = ArgumentCaptor.forClass(Dataset.class);
+        verify(datasets).save(saved.capture());
+        assertEquals("uploads/reviews.csv", saved.getValue().getFilePath());
+    }
+
+    @Test
+    void shouldRejectUnsafeFilePath() {
+        User owner = owner();
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+
+        DatasetRequest request = new DatasetRequest(
+                "Reviews", null, "reviews.csv", "../etc/passwd", null, null);
+
+        ApiException ex = assertThrows(
+                ApiException.class, () -> datasetService.create(request, "owner@example.com"));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+        verify(datasets, never()).save(any(Dataset.class));
+    }
 }
