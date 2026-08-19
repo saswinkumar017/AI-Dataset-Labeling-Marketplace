@@ -166,4 +166,66 @@ class ProjectServiceTest {
         assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
         verify(projects, never()).save(any(Project.class));
     }
+
+    @Test
+    void shouldReturnProjectWhenOwnerMatches() {
+        User owner = owner();
+        Project project = new Project(dataset(owner), owner, "Mine", ProjectStatus.DRAFT, LocalDateTime.now());
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(projects.findByIdAndOwnerId(1L, owner.getId())).thenReturn(Optional.of(project));
+
+        ProjectResponse response = projectService.getByIdForOwner(1L, "owner@example.com");
+
+        assertEquals("Mine", response.name());
+        assertEquals(ProjectStatus.DRAFT, response.status());
+    }
+
+    @Test
+    void shouldDeleteProjectWhenOwnerMatches() {
+        User owner = owner();
+        Project project = new Project(dataset(owner), owner, "Mine", ProjectStatus.DRAFT, LocalDateTime.now());
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(projects.findByIdAndOwnerId(1L, owner.getId())).thenReturn(Optional.of(project));
+
+        projectService.delete(1L, "owner@example.com");
+
+        verify(projects).delete(project);
+    }
+
+    @Test
+    void shouldRejectGetWhenProjectBelongsToAnotherUser() {
+        User owner = owner();
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(projects.findByIdAndOwnerId(1L, owner.getId())).thenReturn(Optional.empty());
+
+        ApiException ex = assertThrows(
+                ApiException.class, () -> projectService.getByIdForOwner(1L, "owner@example.com"));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
+    }
+
+    @Test
+    void shouldRejectUpdateWhenProjectBelongsToAnotherUser() {
+        User owner = owner();
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(projects.findByIdAndOwnerId(1L, owner.getId())).thenReturn(Optional.empty());
+
+        ApiException ex = assertThrows(
+                ApiException.class,
+                () -> projectService.update(
+                        1L, new ProjectRequest(7L, "Hacked", null, null), "owner@example.com"));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
+        verify(projects, never()).save(any(Project.class));
+    }
+
+    @Test
+    void shouldRejectAccessWhenUserIsUnknown() {
+        when(users.findByEmail("ghost@example.com")).thenReturn(Optional.empty());
+
+        ApiException ex = assertThrows(
+                ApiException.class, () -> projectService.listMine("ghost@example.com"));
+
+        assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatus());
+    }
 }

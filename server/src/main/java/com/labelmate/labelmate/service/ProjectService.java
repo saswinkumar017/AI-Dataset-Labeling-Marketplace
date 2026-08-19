@@ -15,6 +15,17 @@ import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
+/**
+ * Application logic for annotation projects.
+ *
+ * <p>All authorization lives here rather than in the controller, so every
+ * caller is covered: the owner identity always comes from the security
+ * context (never from client input) and each lookup filters by owner id,
+ * which keeps one user from reaching another user's project even by
+ * guessing its id. Creation additionally requires the dataset to be owned
+ * by the same user, keeping the Dataset → Project link referentially
+ * honest.
+ */
 @Service
 public class ProjectService {
 
@@ -29,6 +40,13 @@ public class ProjectService {
         this.users = users;
     }
 
+    /**
+     * Creates a project on a dataset owned by the calling user.
+     *
+     * <p>The dataset link is fixed at creation because the database design
+     * forbids changing it afterwards; this keeps project ownership and
+     * dataset ownership consistent by construction.
+     */
     public ProjectResponse create(ProjectRequest request, String ownerEmail) {
         User owner = loadOwner(ownerEmail);
         Dataset dataset = loadOwnedDataset(request.datasetId(), owner);
@@ -39,6 +57,12 @@ public class ProjectService {
         return ProjectResponse.from(projects.save(project));
     }
 
+    /**
+     * Lists only the calling user's projects, newest first.
+     *
+     * <p>Scoping the query by owner id keeps other users' projects out of
+     * the result without any in-memory filtering.
+     */
     public List<ProjectResponse> listMine(String ownerEmail) {
         User owner = loadOwner(ownerEmail);
         return projects.findByOwnerIdOrderByCreatedAtDesc(owner.getId()).stream()
@@ -46,10 +70,21 @@ public class ProjectService {
                 .toList();
     }
 
+    /**
+     * Returns a single project only when it belongs to the calling user.
+     * A foreign or missing id yields 404 so project ids cannot be probed.
+     */
     public ProjectResponse getByIdForOwner(Long id, String ownerEmail) {
         return ProjectResponse.from(loadOwned(id, ownerEmail));
     }
 
+    /**
+     * Updates name, instructions, and label type only when the project
+     * belongs to the calling user. The dataset link and status stay
+     * untouched: the dataset is immutable after creation and status
+     * transitions belong to the future task workflow, not to a generic
+     * update.
+     */
     public ProjectResponse update(Long id, ProjectRequest request, String ownerEmail) {
         Project project = loadOwned(id, ownerEmail);
         project.setName(request.name().trim());
@@ -59,6 +94,9 @@ public class ProjectService {
         return ProjectResponse.from(projects.save(project));
     }
 
+    /**
+     * Deletes a project only when it belongs to the calling user.
+     */
     public void delete(Long id, String ownerEmail) {
         projects.delete(loadOwned(id, ownerEmail));
     }

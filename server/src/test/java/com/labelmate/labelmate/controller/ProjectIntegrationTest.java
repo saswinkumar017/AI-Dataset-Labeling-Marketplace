@@ -234,4 +234,55 @@ class ProjectIntegrationTest {
                 .andExpect(jsonPath("$.name").value("Renamed"))
                 .andExpect(jsonPath("$.datasetId").value(first));
     }
+
+    @Test
+    void shouldRejectProjectReadsWhenUnauthenticated() throws Exception {
+        mockMvc.perform(get("/api/projects"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/api/projects/1"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void shouldRejectProjectModificationsWhenUnauthenticated() throws Exception {
+        mockMvc.perform(put("/api/projects/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"datasetId\":1,\"name\":\"Nope\"}"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(delete("/api/projects/1"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void shouldRejectProjectUpdateWhenRequestIsInvalid() throws Exception {
+        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        long datasetId = datasetIdFor(token, "Reviews");
+        long projectId = projectIdFor(token, datasetId, "Old");
+
+        mockMvc.perform(put("/api/projects/" + projectId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"datasetId\":" + datasetId + ",\"name\":\"\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").exists());
+    }
+
+    @Test
+    void shouldIgnoreForeignDatasetWhenUpdating() throws Exception {
+        String mine = tokenFor("Mine", "mine@example.com", "secret123");
+        String other = tokenFor("Other", "other@example.com", "secret123");
+        long mineDataset = datasetIdFor(mine, "Mine Data");
+        long otherDataset = datasetIdFor(other, "Other Data");
+        long projectId = projectIdFor(mine, mineDataset, "Linked");
+
+        mockMvc.perform(put("/api/projects/" + projectId)
+                        .header("Authorization", "Bearer " + mine)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"datasetId\":" + otherDataset + ",\"name\":\"Renamed\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Renamed"))
+                .andExpect(jsonPath("$.datasetId").value(mineDataset));
+    }
 }
