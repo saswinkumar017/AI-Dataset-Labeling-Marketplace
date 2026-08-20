@@ -63,6 +63,24 @@ export type DatasetResponse = {
   updatedAt: string | null;
 };
 
+export type ProjectResponse = {
+  id: number;
+  datasetId: number;
+  name: string;
+  instructions: string | null;
+  labelType: string | null;
+  status: "DRAFT" | "IN_PROGRESS" | "COMPLETED";
+  createdAt: string;
+  updatedAt: string | null;
+};
+
+export type ProjectPayload = {
+  datasetId: number;
+  name: string;
+  instructions?: string | null;
+  labelType?: string | null;
+};
+
 export async function registerRequest(username: string, email: string, password: string) {
   const res = await api.post<BackendUser>("/api/auth/register", { username, email, password });
   return res.data;
@@ -119,6 +137,30 @@ export async function deleteDataset(id: number) {
   await api.delete(`/api/datasets/${id}`);
 }
 
+export async function listProjects() {
+  const res = await api.get<ProjectResponse[]>("/api/projects");
+  return res.data;
+}
+
+export async function createProject(data: ProjectPayload) {
+  const res = await api.post<ProjectResponse>("/api/projects", data);
+  return res.data;
+}
+
+export async function getProject(id: number) {
+  const res = await api.get<ProjectResponse>(`/api/projects/${id}`);
+  return res.data;
+}
+
+export async function updateProject(id: number, data: ProjectPayload) {
+  const res = await api.put<ProjectResponse>(`/api/projects/${id}`, data);
+  return res.data;
+}
+
+export async function deleteProject(id: number) {
+  await api.delete(`/api/projects/${id}`);
+}
+
 export function friendlyAuthError(error: unknown): string {
   if (axios.isAxiosError(error)) {
     const status = error.response?.status;
@@ -140,6 +182,20 @@ export function friendlyDatasetError(error: unknown): string {
     if (status === 401) return "Session expired. Please sign in again.";
     if (status === 404) return "Dataset not found or you do not have access.";
     if (status === 400) return backendMessage ?? "Please check the dataset details.";
+    if (error.code === "ECONNABORTED") return "Request timed out. Please try again.";
+    if (error.message === "Network Error") return "Cannot reach the server. Is the backend running on port 8080?";
+    return backendMessage ?? "Something went wrong. Please try again.";
+  }
+  return "Something went wrong. Please try again.";
+}
+
+export function friendlyProjectError(error: unknown): string {
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
+    const backendMessage = (error.response?.data as { error?: string } | undefined)?.error;
+    if (status === 401) return "Session expired. Please sign in again.";
+    if (status === 404) return "Project not found or you do not have access.";
+    if (status === 400) return backendMessage ?? "Please check the project details.";
     if (error.code === "ECONNABORTED") return "Request timed out. Please try again.";
     if (error.message === "Network Error") return "Cannot reach the server. Is the backend running on port 8080?";
     return backendMessage ?? "Something went wrong. Please try again.";
