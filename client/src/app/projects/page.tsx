@@ -4,7 +4,7 @@ import AppShell from "@/components/AppShell";
 import Card from "@/components/Card";
 import Badge from "@/components/Badge";
 import RequireAuth from "@/components/RequireAuth";
-import { createProject, deleteProject, friendlyProjectError, listProjects, updateProject, type ProjectResponse } from "@/lib/api";
+import { createProject, deleteProject, friendlyDatasetError, friendlyProjectError, listDatasets, listProjects, updateProject, type DatasetResponse, type ProjectResponse } from "@/lib/api";
 
 type FormState = {
   datasetId: string;
@@ -23,8 +23,11 @@ function statusTone(status: ProjectResponse["status"]): "zinc" | "emerald" | "bl
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<ProjectResponse[]>([]);
+  const [datasets, setDatasets] = useState<DatasetResponse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [datasetsLoading, setDatasetsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [datasetsError, setDatasetsError] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -35,13 +38,26 @@ export default function ProjectsPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await listProjects();
-      setProjects(data);
+      setProjects(await listProjects());
     } catch (err) {
       setError(friendlyProjectError(err));
     } finally {
       setLoading(false);
     }
+    // Datasets are reloaded separately so a dataset failure never masks
+    // the project list (and vice versa).
+    try {
+      setDatasets(await listDatasets());
+      setDatasetsError(null);
+    } catch (err) {
+      setDatasetsError(friendlyDatasetError(err));
+    } finally {
+      setDatasetsLoading(false);
+    }
+  }
+
+  function datasetName(id: number): string {
+    return datasets.find((d) => d.id === id)?.name ?? `Dataset #${id}`;
   }
 
   useEffect(() => {
@@ -59,6 +75,17 @@ export default function ProjectsPage() {
         setError(friendlyProjectError(err));
         setLoading(false);
       });
+    listDatasets()
+      .then((data) => {
+        if (cancelled) return;
+        setDatasets(data);
+        setDatasetsLoading(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setDatasetsError(friendlyDatasetError(err));
+        setDatasetsLoading(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -75,7 +102,7 @@ export default function ProjectsPage() {
 
   function validate(formState: FormState): string | null {
     if (!formState.datasetId.trim() || !Number.isInteger(Number(formState.datasetId)) || Number(formState.datasetId) <= 0) {
-      return "Dataset ID must be a positive whole number. Find it on the Datasets page.";
+      return "Please select one of your datasets.";
     }
     if (formState.name.trim().length < 2 || formState.name.trim().length > 150) {
       return "Name must be between 2 and 150 characters.";
@@ -148,9 +175,21 @@ export default function ProjectsPage() {
           <h2 className="text-sm font-semibold text-zinc-900">Create project</h2>
           <form onSubmit={onCreate} className="mt-4 space-y-3">
             <div>
-              <label className="text-xs font-medium text-zinc-700">Dataset ID *</label>
-              <input value={form.datasetId} onChange={(e) => setForm({ ...form, datasetId: e.target.value })} placeholder="e.g. 1" type="number" min="1" step="1" className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-900" />
-              <div className="mt-1 text-xs text-zinc-500">The ID of one of your datasets — see the Datasets page.</div>
+              <label className="text-xs font-medium text-zinc-700">Dataset *</label>
+              {datasetsLoading ? (
+                <div className="mt-1 text-xs text-zinc-500">Loading your datasets…</div>
+              ) : datasetsError ? (
+                <div className="mt-1 text-xs text-red-600">{datasetsError}</div>
+              ) : datasets.length === 0 ? (
+                <div className="mt-1 text-xs text-zinc-500">No datasets yet — create one on the Datasets page first.</div>
+              ) : (
+                <select value={form.datasetId} onChange={(e) => setForm({ ...form, datasetId: e.target.value })} className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900">
+                  <option value="">Select a dataset…</option>
+                  {datasets.map((d) => (
+                    <option key={d.id} value={d.id}>{d.name} (#{d.id})</option>
+                  ))}
+                </select>
+              )}
             </div>
             <div>
               <label className="text-xs font-medium text-zinc-700">Name *</label>
@@ -164,7 +203,7 @@ export default function ProjectsPage() {
               <label className="text-xs font-medium text-zinc-700">Label type</label>
               <input value={form.labelType} onChange={(e) => setForm({ ...form, labelType: e.target.value })} placeholder="CLASSIFICATION" className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-900" maxLength={50} />
             </div>
-            <button type="submit" disabled={submitting} className={`rounded-full px-5 py-2 text-sm font-medium text-white ${submitting ? "bg-zinc-400" : "bg-zinc-900 hover:bg-zinc-800"}`}>
+            <button type="submit" disabled={submitting || datasets.length === 0} className={`rounded-full px-5 py-2 text-sm font-medium text-white ${submitting || datasets.length === 0 ? "bg-zinc-400" : "bg-zinc-900 hover:bg-zinc-800"}`}>
               {submitting ? "Creating…" : "Create project"}
             </button>
           </form>
@@ -187,7 +226,7 @@ export default function ProjectsPage() {
                   <div className="flex items-start justify-between">
                     <div>
                       <div className="text-sm font-semibold text-zinc-900">{p.name}</div>
-                      <div className="text-xs text-zinc-500">{p.status} · Dataset #{p.datasetId} · {new Date(p.createdAt).toLocaleDateString()}</div>
+                      <div className="text-xs text-zinc-500">{p.status} · {datasetName(p.datasetId)} · {new Date(p.createdAt).toLocaleDateString()}</div>
                       {p.instructions && <div className="mt-1 text-xs text-zinc-600 line-clamp-2">{p.instructions}</div>}
                     </div>
                     <Badge tone={statusTone(p.status)}>{p.status}</Badge>
@@ -217,7 +256,7 @@ export default function ProjectsPage() {
                   {expandedId === p.id && (
                     <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-xs">
                       <div>ID: {p.id}</div>
-                      <div>Dataset ID: {p.datasetId}</div>
+                      <div>Dataset: {datasetName(p.datasetId)} (#{p.datasetId})</div>
                       <div>Status: {p.status}</div>
                       {p.labelType && <div>Label type: {p.labelType}</div>}
                       {p.instructions && <div className="mt-1">Instructions: {p.instructions}</div>}
@@ -227,7 +266,7 @@ export default function ProjectsPage() {
                   )}
                   {editingId === p.id && (
                     <div className="mt-3 space-y-2 rounded-lg border border-zinc-200 p-3">
-                      <div className="text-xs text-zinc-500">Dataset ID: {p.datasetId} (cannot be changed)</div>
+                      <div className="text-xs text-zinc-500">Dataset: {datasetName(p.datasetId)} (#{p.datasetId}, cannot be changed)</div>
                       <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" placeholder="Name" maxLength={150} />
                       <textarea value={editForm.instructions} onChange={(e) => setEditForm({ ...editForm, instructions: e.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" placeholder="Instructions" rows={2} maxLength={2000} />
                       <input value={editForm.labelType} onChange={(e) => setEditForm({ ...editForm, labelType: e.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" placeholder="Label type" maxLength={50} />
