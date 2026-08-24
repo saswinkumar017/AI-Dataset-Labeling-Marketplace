@@ -2,6 +2,7 @@ package com.labelmate.labelmate.service;
 
 import com.labelmate.labelmate.dto.AnnotationRequest;
 import com.labelmate.labelmate.dto.AnnotationResponse;
+import com.labelmate.labelmate.dto.AnnotationUpdateRequest;
 import com.labelmate.labelmate.exception.ApiException;
 import com.labelmate.labelmate.model.Annotation;
 import com.labelmate.labelmate.model.AnnotationSource;
@@ -11,6 +12,7 @@ import com.labelmate.labelmate.model.TaskStatus;
 import com.labelmate.labelmate.model.User;
 import com.labelmate.labelmate.repository.AnnotationRepository;
 import com.labelmate.labelmate.repository.LabelRepository;
+import com.labelmate.labelmate.repository.ProjectRepository;
 import com.labelmate.labelmate.repository.TaskRepository;
 import com.labelmate.labelmate.repository.UserRepository;
 import java.time.LocalDateTime;
@@ -36,16 +38,19 @@ public class AnnotationService {
     private final AnnotationRepository annotations;
     private final TaskRepository tasks;
     private final LabelRepository labels;
+    private final ProjectRepository projects;
     private final UserRepository users;
 
     public AnnotationService(
             AnnotationRepository annotations,
             TaskRepository tasks,
             LabelRepository labels,
+            ProjectRepository projects,
             UserRepository users) {
         this.annotations = annotations;
         this.tasks = tasks;
         this.labels = labels;
+        this.projects = projects;
         this.users = users;
     }
 
@@ -57,6 +62,9 @@ public class AnnotationService {
     public AnnotationResponse create(AnnotationRequest request, String userEmail) {
         User user = loadUser(userEmail);
         Task task = loadOwnedTask(request.taskId(), user);
+        if (task.getStatus() == TaskStatus.APPROVED) {
+            throw new ApiException(HttpStatus.CONFLICT, "Task is already approved");
+        }
         String labelValue = request.label().trim();
 
         Annotation annotation =
@@ -89,6 +97,64 @@ public class AnnotationService {
         return annotations.findByTaskIdOrderByCreatedAtDesc(task.getId()).stream()
                 .map(AnnotationResponse::from)
                 .toList();
+    }
+
+    /**
+     * Lists every annotation in a project owned by the calling user, newest
+     * first. A foreign or missing project id yields 404 so project ids
+     * cannot be probed.
+     */
+    @Transactional(readOnly = true)
+    public List<AnnotationResponse> listByProject(Long projectId, String userEmail) {
+        User user = loadUser(userEmail);
+        if (!ownsProject(projectId, user)) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Project not found");
+        }
+        return annotations.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
+                .map(AnnotationResponse::from)
+                .toList();
+    }
+
+    /**
+     * Updates the label of an annotation whose project belongs to the calling
+     * user. Approved tasks are immutable: relabeling an approved annotation
+     * would silently invalidate the human review, so it yields 409.
+     */
+    @Transactional
+    public AnnotationResponse update(Long id, AnnotationUpdateRequest request, String userEmail) {
+        Annotation annotation = loadOwned(id, userEmail);
+        if (annotation.getTask().getStatus() == TaskStatus.APPROVED) {
+            throw new ApiException(HttpStatus.CONFLICT, "Annotation is already approved");
+        }
+        String labelValue = request.label().trim();
+        annotation.setContent(labelValue);
+        annotation.setLabel(null);
+        labels.findByProjectIdAndName(annotation.getTask().getProject().getId(), labelValue)
+                .ifPresent(annotation::setLabel);
+        annotation.setUpdatedAt(LocalDateTime.now());
+        return AnnotationResponse.from(annotations.save(annotation));
+    }
+
+    /**
+     * Deletes an annotation whose project belongs to the calling user.
+     * When the task has no annotations left it returns to
+     * {@code IN_PROGRESS} so the workspace shows it as work to do rather
+     * than as submitted.
+     */
+    @Transactional
+    public void delete(Long id, String userEmail) {
+        Annotation annotation = loadOwned(id, userEmail);
+        Task task = annotation.getTask();
+        annotations.delete(annotation);
+        if (task != null && annotations.findByTaskIdOrderByCreatedAtDesc(task.getId()).isEmpty()) {
+            task.setStatus(TaskStatus.IN_PROGRESS);
+            task.setUpdatedAt(LocalDateTime.now());
+            tasks.save(task);
+        }
+    }
+
+    private boolean ownsProject(Long projectId, User user) {
+        return projects.findByIdAndOwnerId(projectId, user.getId()).isPresent();
     }
 
     private void moveTaskToSubmitted(Task task) {

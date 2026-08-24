@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.labelmate.labelmate.dto.AnnotationRequest;
 import com.labelmate.labelmate.dto.AnnotationResponse;
+import com.labelmate.labelmate.dto.AnnotationUpdateRequest;
 import com.labelmate.labelmate.exception.ApiException;
 import com.labelmate.labelmate.model.Annotation;
 import com.labelmate.labelmate.model.AnnotationSource;
@@ -22,6 +23,7 @@ import com.labelmate.labelmate.model.TaskStatus;
 import com.labelmate.labelmate.model.User;
 import com.labelmate.labelmate.repository.AnnotationRepository;
 import com.labelmate.labelmate.repository.LabelRepository;
+import com.labelmate.labelmate.repository.ProjectRepository;
 import com.labelmate.labelmate.repository.TaskRepository;
 import com.labelmate.labelmate.repository.UserRepository;
 import java.lang.reflect.Field;
@@ -47,6 +49,9 @@ class AnnotationServiceTest {
 
     @Mock
     private LabelRepository labels;
+
+    @Mock
+    private ProjectRepository projects;
 
     @Mock
     private UserRepository users;
@@ -182,6 +187,139 @@ class AnnotationServiceTest {
                 assertThrows(ApiException.class, () -> annotationService.getByIdForUser(5L, "owner@example.com"));
 
         assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
+    }
+
+    @Test
+    void shouldRejectCreationWhenTaskIsAlreadyApproved() throws Exception {
+        User owner = user("owner@example.com", 1L);
+        Task task = task(owner, TaskStatus.APPROVED);
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(tasks.findById(20L)).thenReturn(Optional.of(task));
+
+        ApiException ex = assertThrows(
+                ApiException.class,
+                () -> annotationService.create(new AnnotationRequest(20L, "Positive"), "owner@example.com"));
+
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+        verify(annotations, never()).save(any(Annotation.class));
+    }
+
+    @Test
+    void shouldUpdateAnnotationWhenOwnerMatches() throws Exception {
+        User owner = user("owner@example.com", 1L);
+        Task task = task(owner, TaskStatus.SUBMITTED);
+        Annotation annotation = new Annotation(task, owner, AnnotationSource.HUMAN, LocalDateTime.now());
+        annotation.setContent("Positive");
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(annotations.findById(5L)).thenReturn(Optional.of(annotation));
+        when(labels.findByProjectIdAndName(10L, "Negative")).thenReturn(Optional.empty());
+        when(annotations.save(any(Annotation.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        AnnotationResponse response =
+                annotationService.update(5L, new AnnotationUpdateRequest("Negative"), "owner@example.com");
+
+        assertEquals("Negative", response.label());
+        verify(annotations).save(annotation);
+    }
+
+    @Test
+    void shouldRejectUpdateWhenTaskIsAlreadyApproved() throws Exception {
+        User owner = user("owner@example.com", 1L);
+        Task task = task(owner, TaskStatus.APPROVED);
+        Annotation annotation = new Annotation(task, owner, AnnotationSource.HUMAN, LocalDateTime.now());
+        annotation.setContent("Positive");
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(annotations.findById(5L)).thenReturn(Optional.of(annotation));
+
+        ApiException ex = assertThrows(
+                ApiException.class,
+                () -> annotationService.update(5L, new AnnotationUpdateRequest("Negative"), "owner@example.com"));
+
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+        verify(annotations, never()).save(any(Annotation.class));
+    }
+
+    @Test
+    void shouldRejectUpdateWhenAnnotationBelongsToAnotherUser() throws Exception {
+        User owner = user("owner@example.com", 1L);
+        User other = user("other@example.com", 2L);
+        Task foreign = task(other, TaskStatus.SUBMITTED);
+        Annotation annotation = new Annotation(foreign, other, AnnotationSource.HUMAN, LocalDateTime.now());
+        annotation.setContent("Positive");
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(annotations.findById(5L)).thenReturn(Optional.of(annotation));
+
+        ApiException ex = assertThrows(
+                ApiException.class,
+                () -> annotationService.update(5L, new AnnotationUpdateRequest("Negative"), "owner@example.com"));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
+        verify(annotations, never()).save(any(Annotation.class));
+    }
+
+    @Test
+    void shouldDeleteAnnotationAndReopenTaskWhenItWasTheLastOne() throws Exception {
+        User owner = user("owner@example.com", 1L);
+        Task task = task(owner, TaskStatus.SUBMITTED);
+        Annotation annotation = new Annotation(task, owner, AnnotationSource.HUMAN, LocalDateTime.now());
+        annotation.setContent("Positive");
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(annotations.findById(5L)).thenReturn(Optional.of(annotation));
+        when(annotations.findByTaskIdOrderByCreatedAtDesc(20L)).thenReturn(List.of());
+
+        annotationService.delete(5L, "owner@example.com");
+
+        verify(annotations).delete(annotation);
+        assertEquals(TaskStatus.IN_PROGRESS, task.getStatus());
+        verify(tasks).save(task);
+    }
+
+    @Test
+    void shouldRejectDeleteWhenAnnotationBelongsToAnotherUser() throws Exception {
+        User owner = user("owner@example.com", 1L);
+        User other = user("other@example.com", 2L);
+        Task foreign = task(other, TaskStatus.SUBMITTED);
+        Annotation annotation = new Annotation(foreign, other, AnnotationSource.HUMAN, LocalDateTime.now());
+        annotation.setContent("Positive");
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(annotations.findById(5L)).thenReturn(Optional.of(annotation));
+
+        ApiException ex = assertThrows(
+                ApiException.class, () -> annotationService.delete(5L, "owner@example.com"));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
+        verify(annotations, never()).delete(any(Annotation.class));
+    }
+
+    @Test
+    void shouldListAnnotationsForOwnedProject() throws Exception {
+        User owner = user("owner@example.com", 1L);
+        Task task = task(owner, TaskStatus.SUBMITTED);
+        Project project = task.getProject();
+        Annotation annotation = new Annotation(task, owner, AnnotationSource.HUMAN, LocalDateTime.now());
+        annotation.setContent("Positive");
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(projects.findByIdAndOwnerId(10L, 1L)).thenReturn(Optional.of(project));
+        when(annotations.findByProjectIdOrderByCreatedAtDesc(10L)).thenReturn(List.of(annotation));
+
+        List<AnnotationResponse> result = annotationService.listByProject(10L, "owner@example.com");
+
+        assertEquals(1, result.size());
+        assertEquals("Positive", result.get(0).label());
+        verify(annotations).findByProjectIdOrderByCreatedAtDesc(10L);
+    }
+
+    @Test
+    void shouldRejectProjectListingWhenProjectBelongsToAnotherUser() throws Exception {
+        User owner = user("owner@example.com", 1L);
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(projects.findByIdAndOwnerId(10L, 1L)).thenReturn(Optional.empty());
+
+        ApiException ex = assertThrows(
+                ApiException.class, () -> annotationService.listByProject(10L, "owner@example.com"));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
+        verify(annotations, never()).findByProjectIdOrderByCreatedAtDesc(any());
     }
 
     @Test

@@ -1,7 +1,9 @@
 package com.labelmate.labelmate.controller;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -238,5 +240,119 @@ class AnnotationIntegrationTest {
 
         mockMvc.perform(get("/api/annotations").param("taskId", "1"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void shouldUpdateAndDeleteAnnotationWhenOwnerMatches() throws Exception {
+        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        long datasetId = datasetIdFor(token, "Reviews");
+        long projectId = projectIdFor(token, datasetId, "Sentiment v1");
+        long taskId = taskIdFor(projectId, datasetId);
+
+        MvcResult created = mockMvc.perform(post("/api/annotations")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"taskId\":" + taskId + ",\"label\":\"Positive\"}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+        long annotationId = objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asLong();
+
+        mockMvc.perform(put("/api/annotations/" + annotationId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"label\":\"Negative\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.label").value("Negative"));
+
+        mockMvc.perform(delete("/api/annotations/" + annotationId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/annotations/" + annotationId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void shouldListAnnotationsForOwnedProject() throws Exception {
+        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        long datasetId = datasetIdFor(token, "Reviews");
+        long projectId = projectIdFor(token, datasetId, "Sentiment v1");
+        long taskId = taskIdFor(projectId, datasetId);
+
+        mockMvc.perform(post("/api/annotations")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"taskId\":" + taskId + ",\"label\":\"Positive\"}"))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/annotations")
+                        .header("Authorization", "Bearer " + token)
+                        .param("projectId", String.valueOf(projectId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].label").value("Positive"));
+    }
+
+    @Test
+    void shouldRejectProjectListingWhenProjectBelongsToAnotherUser() throws Exception {
+        String mine = tokenFor("Mine", "mine@example.com", "secret123");
+        String other = tokenFor("Other", "other@example.com", "secret123");
+        long mineDataset = datasetIdFor(mine, "Mine Data");
+        long mineProject = projectIdFor(mine, mineDataset, "Mine Project");
+
+        mockMvc.perform(get("/api/annotations")
+                        .header("Authorization", "Bearer " + other)
+                        .param("projectId", String.valueOf(mineProject)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void shouldRejectAnnotationModificationWhenItBelongsToAnotherUser() throws Exception {
+        String mine = tokenFor("Mine", "mine@example.com", "secret123");
+        String other = tokenFor("Other", "other@example.com", "secret123");
+        long mineDataset = datasetIdFor(mine, "Mine Data");
+        long mineProject = projectIdFor(mine, mineDataset, "Mine Project");
+        long mineTask = taskIdFor(mineProject, mineDataset);
+
+        MvcResult created = mockMvc.perform(post("/api/annotations")
+                        .header("Authorization", "Bearer " + mine)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"taskId\":" + mineTask + ",\"label\":\"Positive\"}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+        long annotationId = objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asLong();
+
+        mockMvc.perform(put("/api/annotations/" + annotationId)
+                        .header("Authorization", "Bearer " + other)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"label\":\"Hacked\"}"))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(delete("/api/annotations/" + annotationId)
+                        .header("Authorization", "Bearer " + other))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void shouldRejectAnnotationUpdateWhenRequestIsInvalid() throws Exception {
+        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        long datasetId = datasetIdFor(token, "Reviews");
+        long projectId = projectIdFor(token, datasetId, "Sentiment v1");
+        long taskId = taskIdFor(projectId, datasetId);
+
+        MvcResult created = mockMvc.perform(post("/api/annotations")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"taskId\":" + taskId + ",\"label\":\"Positive\"}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+        long annotationId = objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asLong();
+
+        mockMvc.perform(put("/api/annotations/" + annotationId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"label\":\"\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").exists());
     }
 }
