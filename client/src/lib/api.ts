@@ -202,3 +202,100 @@ export function friendlyProjectError(error: unknown): string {
   }
   return "Something went wrong. Please try again.";
 }
+
+export type TaskStatus =
+  | "PENDING"
+  | "ASSIGNED"
+  | "IN_PROGRESS"
+  | "SUBMITTED"
+  | "APPROVED"
+  | "REJECTED";
+
+export type TaskResponse = {
+  id: number;
+  projectId: number;
+  datasetId: number;
+  itemIndex: number | null;
+  itemData: string | null;
+  status: TaskStatus;
+  createdAt: string;
+  updatedAt: string | null;
+};
+
+export type AnnotationResponse = {
+  id: number;
+  taskId: number;
+  projectId: number;
+  label: string;
+  labelId: number | null;
+  source: "HUMAN" | "AI" | "HUMAN_APPROVED";
+  confidence: number | null;
+  content: string | null;
+  createdAt: string;
+  updatedAt: string | null;
+};
+
+export async function listProjectTasks(projectId: number, status?: TaskStatus) {
+  const res = await api.get<TaskResponse[]>(`/api/projects/${projectId}/tasks`, {
+    params: status ? { status } : {},
+  });
+  return res.data;
+}
+
+export async function createTask(projectId: number, data: { itemData?: string | null; itemIndex?: number | null }) {
+  const res = await api.post<TaskResponse>(`/api/projects/${projectId}/tasks`, data);
+  return res.data;
+}
+
+export async function listTaskAnnotations(taskId: number) {
+  const res = await api.get<AnnotationResponse[]>("/api/annotations", { params: { taskId } });
+  return res.data;
+}
+
+export async function listProjectAnnotations(projectId: number) {
+  const res = await api.get<AnnotationResponse[]>("/api/annotations", { params: { projectId } });
+  return res.data;
+}
+
+export async function createAnnotation(data: { taskId: number; label: string }) {
+  const res = await api.post<AnnotationResponse>("/api/annotations", data);
+  return res.data;
+}
+
+export async function updateAnnotation(id: number, data: { label: string }) {
+  const res = await api.put<AnnotationResponse>(`/api/annotations/${id}`, data);
+  return res.data;
+}
+
+export async function deleteAnnotation(id: number) {
+  await api.delete(`/api/annotations/${id}`);
+}
+
+export function friendlyTaskError(error: unknown): string {
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
+    const backendMessage = (error.response?.data as { error?: string } | undefined)?.error;
+    if (status === 401) return "Session expired. Please sign in again.";
+    if (status === 404) return "Task or project not found, or you do not have access.";
+    if (status === 400) return backendMessage ?? "Please check the task details.";
+    if (error.code === "ECONNABORTED") return "Request timed out. Please try again.";
+    if (error.message === "Network Error") return "Cannot reach the server. Is the backend running on port 8080?";
+    return backendMessage ?? "Something went wrong. Please try again.";
+  }
+  return "Something went wrong. Please try again.";
+}
+
+export function friendlyAnnotationError(error: unknown): string {
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
+    const backendMessage = (error.response?.data as { error?: string } | undefined)?.error;
+    if (status === 401) return "Session expired. Please sign in again.";
+    if (status === 404) return "Annotation or task not found, or you do not have access.";
+    if (status === 409) return backendMessage ?? "This item can no longer be annotated.";
+    if (status === 400) return backendMessage ?? "Please check the annotation and try again.";
+    if (error.code === "ECONNABORTED") return "Request timed out. Please try again.";
+    if (error.message === "Network Error") return "Cannot reach the server. Is the backend running on port 8080?";
+    return backendMessage ?? "Something went wrong. Please try again.";
+  }
+  return "Something went wrong. Please try again.";
+}
