@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import Card from "@/components/Card";
 import Badge from "@/components/Badge";
@@ -237,6 +238,9 @@ export default function ProjectsPage() {
                     </div>
                   )}
                   <div className="mt-3 flex flex-wrap gap-2">
+                    <Link href={`/annotate?projectId=${p.id}`} className="rounded-full bg-zinc-900 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-800">
+                      Annotate
+                    </Link>
                     <button onClick={() => setExpandedId(expandedId === p.id ? null : p.id)} className="rounded-full border border-zinc-200 px-3 py-1 text-xs hover:bg-zinc-50">
                       {expandedId === p.id ? "Hide" : "View"}
                     </button>

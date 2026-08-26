@@ -1,0 +1,76 @@
+package com.labelmate.labelmate.service;
+
+import com.labelmate.labelmate.dto.TaskRequest;
+import com.labelmate.labelmate.dto.TaskResponse;
+import com.labelmate.labelmate.exception.ApiException;
+import com.labelmate.labelmate.model.Project;
+import com.labelmate.labelmate.model.Task;
+import com.labelmate.labelmate.model.TaskStatus;
+import com.labelmate.labelmate.model.User;
+import com.labelmate.labelmate.repository.ProjectRepository;
+import com.labelmate.labelmate.repository.TaskRepository;
+import com.labelmate.labelmate.repository.UserRepository;
+import java.time.LocalDateTime;
+import java.util.List;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * Minimal task queue supporting the annotation workflow.
+ *
+ * <p>A task is one unit of annotation work inside a project: it carries the
+ * item to label ({@code itemData}) and its workflow status. Creation and
+ * listing are scoped by project ownership, so one user can never see or feed
+ * another user's queue. Status transitions themselves live in
+ * {@link AnnotationService} and the later review service.
+ */
+@Service
+public class TaskService {
+
+    private final TaskRepository tasks;
+    private final ProjectRepository projects;
+    private final UserRepository users;
+
+    public TaskService(TaskRepository tasks, ProjectRepository projects, UserRepository users) {
+        this.tasks = tasks;
+        this.projects = projects;
+        this.users = users;
+    }
+
+    /**
+     * Adds one item to the annotation queue of a project owned by the caller.
+     */
+    @Transactional
+    public TaskResponse create(Long projectId, TaskRequest request, String userEmail) {
+        Project project = loadOwnedProject(projectId, userEmail);
+        Task task = new Task(project, project.getDataset(), TaskStatus.PENDING, LocalDateTime.now());
+        task.setItemData(request.itemData());
+        task.setItemIndex(request.itemIndex());
+        return TaskResponse.from(tasks.save(task));
+    }
+
+    /**
+     * Lists the queue of a project owned by the caller, optionally filtered
+     * by status (for example {@code PENDING} for the annotator's next items).
+     */
+    @Transactional(readOnly = true)
+    public List<TaskResponse> list(Long projectId, TaskStatus status, String userEmail) {
+        Project project = loadOwnedProject(projectId, userEmail);
+        List<Task> found = status == null
+                ? tasks.findByProjectIdOrderByItemIndexAscIdAsc(project.getId())
+                : tasks.findByProjectIdAndStatusOrderByItemIndexAscIdAsc(project.getId(), status);
+        return found.stream().map(TaskResponse::from).toList();
+    }
+
+    private User loadUser(String userEmail) {
+        return users.findByEmail(userEmail)
+                .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "Unauthorized"));
+    }
+
+    private Project loadOwnedProject(Long projectId, String userEmail) {
+        User user = loadUser(userEmail);
+        return projects.findByIdAndOwnerId(projectId, user.getId())
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Project not found"));
+    }
+}

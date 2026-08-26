@@ -8,8 +8,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.labelmate.labelmate.repository.AiSuggestionRepository;
+import com.labelmate.labelmate.repository.AnnotationRepository;
 import com.labelmate.labelmate.repository.DatasetRepository;
+import com.labelmate.labelmate.repository.LabelRepository;
 import com.labelmate.labelmate.repository.ProjectRepository;
+import com.labelmate.labelmate.repository.ReviewRepository;
+import com.labelmate.labelmate.repository.TaskRepository;
 import com.labelmate.labelmate.repository.UserRepository;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,10 +42,30 @@ class ProjectIntegrationTest {
     @Autowired
     private ProjectRepository projects;
 
+    @Autowired
+    private LabelRepository labels;
+
+    @Autowired
+    private TaskRepository taskRepository;
+
+    @Autowired
+    private AnnotationRepository annotationRepository;
+
+    @Autowired
+    private ReviewRepository reviewRepository;
+
+    @Autowired
+    private AiSuggestionRepository aiSuggestionRepository;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
     void cleanDatabase() {
+        reviewRepository.deleteAll();
+        aiSuggestionRepository.deleteAll();
+        annotationRepository.deleteAll();
+        taskRepository.deleteAll();
+        labels.deleteAll();
         projects.deleteAll();
         datasets.deleteAll();
         users.deleteAll();
