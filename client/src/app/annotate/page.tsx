@@ -8,12 +8,14 @@ import RequireAuth from "@/components/RequireAuth";
 import {
   createAnnotation,
   createTask,
+  deleteAnnotation,
   friendlyAnnotationError,
   friendlyProjectError,
   friendlyTaskError,
   listProjectTasks,
   listProjects,
   listTaskAnnotations,
+  updateAnnotation,
   type AnnotationResponse,
   type ProjectResponse,
   type TaskResponse,
@@ -39,6 +41,9 @@ export default function AnnotatePage() {
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [addingItem, setAddingItem] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -164,10 +169,55 @@ export default function AnnotatePage() {
     }
   }
 
+  async function onSaveEdit(id: number) {
+    if (!current || busyId !== null) return;
+    const value = editValue.trim();
+    if (value.length < 1 || value.length > 100) {
+      setError("Label must be between 1 and 100 characters.");
+      return;
+    }
+    setBusyId(id);
+    setError(null);
+    try {
+      const saved = await updateAnnotation(id, { label: value });
+      setSubmitted((prev) => prev.map((a) => (a.id === id ? saved : a)));
+      setEditingId(null);
+      setNotice(`Updated to “${saved.label}”.`);
+    } catch (err) {
+      setError(friendlyAnnotationError(err));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function onDeleteAnnotation(id: number) {
+    if (!current || busyId !== null) return;
+    if (!confirm("Delete this annotation? The item returns to the queue when nothing remains.")) return;
+    setBusyId(id);
+    setError(null);
+    try {
+      await deleteAnnotation(id);
+      const remaining = submitted.filter((a) => a.id !== id);
+      setSubmitted(remaining);
+      if (remaining.length === 0) {
+        setTasks((prev) =>
+          prev.map((t) => (t.id === current.id ? { ...t, status: "IN_PROGRESS" as TaskStatus } : t))
+        );
+      }
+      setEditingId(null);
+      setNotice("Annotation deleted.");
+    } catch (err) {
+      setError(friendlyAnnotationError(err));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   function go(delta: number) {
     setIndex((i) => Math.min(Math.max(i + delta, 0), Math.max(tasks.length - 1, 0)));
     setLabel("");
     setSubmitted([]);
+    setEditingId(null);
     setNotice(null);
     setError(null);
   }
@@ -314,11 +364,61 @@ export default function AnnotatePage() {
                   {submitted.length > 0 && (
                     <Card className="mt-4">
                       <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Submitted for this item</div>
-                      <ul className="mt-2 space-y-2">
+                      <ul className="mt-2 space-y-3">
                         {submitted.map((a) => (
-                          <li key={a.id} className="flex items-center justify-between gap-2 text-sm">
-                            <span className="rounded-full bg-zinc-900 px-2.5 py-1 text-xs text-white">{a.label}</span>
-                            <Badge tone={a.source === "HUMAN_APPROVED" ? "emerald" : "zinc"}>{a.source}</Badge>
+                          <li key={a.id} className="rounded-lg border border-zinc-100 p-2 text-sm">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="rounded-full bg-zinc-900 px-2.5 py-1 text-xs text-white">{a.label}</span>
+                              <Badge tone={a.source === "HUMAN_APPROVED" ? "emerald" : "zinc"}>{a.source}</Badge>
+                            </div>
+                            {current.status !== "APPROVED" && (
+                              editingId === a.id ? (
+                                <div className="mt-2 flex gap-2">
+                                  <input
+                                    value={editValue}
+                                    onChange={(e) => setEditValue(e.target.value)}
+                                    maxLength={100}
+                                    className="w-full rounded-lg border border-zinc-200 px-3 py-1.5 text-sm outline-none focus:border-zinc-900"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => onSaveEdit(a.id)}
+                                    disabled={busyId === a.id}
+                                    className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium text-white ${busyId === a.id ? "bg-zinc-400" : "bg-zinc-900 hover:bg-zinc-800"}`}
+                                  >
+                                    {busyId === a.id ? "Saving…" : "Save"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingId(null)}
+                                    className="shrink-0 rounded-full border border-zinc-200 px-3 py-1.5 text-xs hover:bg-zinc-50"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="mt-2 flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingId(a.id);
+                                      setEditValue(a.label);
+                                    }}
+                                    className="rounded-full border border-zinc-200 px-3 py-1 text-xs hover:bg-zinc-50"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => onDeleteAnnotation(a.id)}
+                                    disabled={busyId === a.id}
+                                    className="rounded-full border border-red-200 px-3 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-40"
+                                  >
+                                    {busyId === a.id ? "Deleting…" : "Delete"}
+                                  </button>
+                                </div>
+                              )
+                            )}
                           </li>
                         ))}
                       </ul>
