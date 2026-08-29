@@ -7,12 +7,14 @@ import com.labelmate.labelmate.exception.ApiException;
 import com.labelmate.labelmate.model.Annotation;
 import com.labelmate.labelmate.model.AnnotationSource;
 import com.labelmate.labelmate.model.Label;
+import com.labelmate.labelmate.model.Role;
 import com.labelmate.labelmate.model.Task;
 import com.labelmate.labelmate.model.TaskStatus;
 import com.labelmate.labelmate.model.User;
 import com.labelmate.labelmate.repository.AnnotationRepository;
 import com.labelmate.labelmate.repository.LabelRepository;
 import com.labelmate.labelmate.repository.ProjectRepository;
+import com.labelmate.labelmate.repository.ReviewRepository;
 import com.labelmate.labelmate.repository.TaskRepository;
 import com.labelmate.labelmate.repository.UserRepository;
 import java.time.LocalDateTime;
@@ -23,14 +25,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Foundation for the Annotation domain.
+ * Application logic for the Annotation domain.
  *
  * <p>Every operation is scoped by project ownership: the task's project must
  * belong to the calling user, so one user cannot annotate another user's
  * project even by guessing a task id. The human-entered label string is
  * stored in {@code content}; when a {@link Label} with the same name already
- * exists in the project it is linked as well. Full update/delete and richer
- * workflow rules belong to later commits.
+ * exists in the project it is linked as well.
+ *
+ * <p>State transitions stay consistent with review: approved tasks are
+ * immutable, and reviewed annotations cannot be deleted because the review
+ * row references them.
  */
 @Service
 public class AnnotationService {
@@ -39,6 +44,7 @@ public class AnnotationService {
     private final TaskRepository tasks;
     private final LabelRepository labels;
     private final ProjectRepository projects;
+    private final ReviewRepository reviews;
     private final UserRepository users;
 
     public AnnotationService(
@@ -46,11 +52,13 @@ public class AnnotationService {
             TaskRepository tasks,
             LabelRepository labels,
             ProjectRepository projects,
+            ReviewRepository reviews,
             UserRepository users) {
         this.annotations = annotations;
         this.tasks = tasks;
         this.labels = labels;
         this.projects = projects;
+        this.reviews = reviews;
         this.users = users;
     }
 
@@ -79,11 +87,13 @@ public class AnnotationService {
     }
 
     /**
-     * Returns a single annotation only when its project belongs to the user.
+     * Returns a single annotation when its project belongs to the calling
+     * user. Admins may read any project so they can review it; annotation
+     * writes stay owner-only.
      */
     @Transactional(readOnly = true)
     public AnnotationResponse getByIdForUser(Long id, String userEmail) {
-        return AnnotationResponse.from(loadOwned(id, userEmail));
+        return AnnotationResponse.from(loadReadable(id, loadUser(userEmail)));
     }
 
     /**
@@ -93,7 +103,7 @@ public class AnnotationService {
     @Transactional(readOnly = true)
     public List<AnnotationResponse> listByTask(Long taskId, String userEmail) {
         User user = loadUser(userEmail);
-        Task task = loadOwnedTask(taskId, user);
+        Task task = loadReadableTask(taskId, user);
         return annotations.findByTaskIdOrderByCreatedAtDesc(task.getId()).stream()
                 .map(AnnotationResponse::from)
                 .toList();
@@ -107,7 +117,7 @@ public class AnnotationService {
     @Transactional(readOnly = true)
     public List<AnnotationResponse> listByProject(Long projectId, String userEmail) {
         User user = loadUser(userEmail);
-        if (!ownsProject(projectId, user)) {
+        if (!canReadProject(projectId, user)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "Project not found");
         }
         return annotations.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
@@ -137,6 +147,8 @@ public class AnnotationService {
 
     /**
      * Deletes an annotation whose project belongs to the calling user.
+     * Reviewed annotations are kept: the review row references them, so
+     * deleting one yields 409 instead of breaking referential integrity.
      * When the task has no annotations left it returns to
      * {@code IN_PROGRESS} so the workspace shows it as work to do rather
      * than as submitted.
@@ -144,6 +156,9 @@ public class AnnotationService {
     @Transactional
     public void delete(Long id, String userEmail) {
         Annotation annotation = loadOwned(id, userEmail);
+        if (reviews.existsByAnnotationId(annotation.getId())) {
+            throw new ApiException(HttpStatus.CONFLICT, "Annotation has already been reviewed");
+        }
         Task task = annotation.getTask();
         annotations.delete(annotation);
         if (task != null && annotations.findByTaskIdOrderByCreatedAtDesc(task.getId()).isEmpty()) {
@@ -153,8 +168,22 @@ public class AnnotationService {
         }
     }
 
+    private boolean canReadProject(Long projectId, User user) {
+        if (user.getRole() == Role.ADMIN) {
+            return projects.findById(projectId).isPresent();
+        }
+        return ownsProject(projectId, user);
+    }
+
     private boolean ownsProject(Long projectId, User user) {
         return projects.findByIdAndOwnerId(projectId, user.getId()).isPresent();
+    }
+
+    private boolean isVisible(Task task, User user) {
+        return task.getProject() != null
+                && task.getProject().getOwner() != null
+                && (Objects.equals(task.getProject().getOwner().getId(), user.getId())
+                        || user.getRole() == Role.ADMIN);
     }
 
     private void moveTaskToSubmitted(Task task) {
@@ -179,6 +208,24 @@ public class AnnotationService {
         if (task.getProject() == null
                 || task.getProject().getOwner() == null
                 || !Objects.equals(task.getProject().getOwner().getId(), user.getId())) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Task not found");
+        }
+        return task;
+    }
+
+    private Annotation loadReadable(Long id, User user) {
+        Annotation annotation = annotations.findById(id)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Annotation not found"));
+        if (annotation.getTask() == null || !isVisible(annotation.getTask(), user)) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Annotation not found");
+        }
+        return annotation;
+    }
+
+    private Task loadReadableTask(Long taskId, User user) {
+        Task task = tasks.findById(taskId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Task not found"));
+        if (!isVisible(task, user)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "Task not found");
         }
         return task;

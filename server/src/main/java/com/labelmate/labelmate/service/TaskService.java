@@ -4,6 +4,7 @@ import com.labelmate.labelmate.dto.TaskRequest;
 import com.labelmate.labelmate.dto.TaskResponse;
 import com.labelmate.labelmate.exception.ApiException;
 import com.labelmate.labelmate.model.Project;
+import com.labelmate.labelmate.model.Role;
 import com.labelmate.labelmate.model.Task;
 import com.labelmate.labelmate.model.TaskStatus;
 import com.labelmate.labelmate.model.User;
@@ -56,7 +57,7 @@ public class TaskService {
      */
     @Transactional(readOnly = true)
     public List<TaskResponse> list(Long projectId, TaskStatus status, String userEmail) {
-        Project project = loadOwnedProject(projectId, userEmail);
+        Project project = loadVisibleProject(projectId, userEmail);
         List<Task> found = status == null
                 ? tasks.findByProjectIdOrderByItemIndexAscIdAsc(project.getId())
                 : tasks.findByProjectIdAndStatusOrderByItemIndexAscIdAsc(project.getId(), status);
@@ -70,6 +71,16 @@ public class TaskService {
 
     private Project loadOwnedProject(Long projectId, String userEmail) {
         User user = loadUser(userEmail);
+        return projects.findByIdAndOwnerId(projectId, user.getId())
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Project not found"));
+    }
+
+    private Project loadVisibleProject(Long projectId, String userEmail) {
+        User user = loadUser(userEmail);
+        if (user.getRole() == Role.ADMIN) {
+            return projects.findById(projectId)
+                    .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Project not found"));
+        }
         return projects.findByIdAndOwnerId(projectId, user.getId())
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Project not found"));
     }
