@@ -299,3 +299,66 @@ export function friendlyAnnotationError(error: unknown): string {
   }
   return "Something went wrong. Please try again.";
 }
+
+export type ReviewDecision = "APPROVED" | "REJECTED";
+
+export type ReviewResponse = {
+  id: number;
+  annotationId: number;
+  taskId: number;
+  projectId: number;
+  reviewer: string;
+  decision: ReviewDecision;
+  comment: string | null;
+  reviewedAt: string;
+};
+
+export async function listAnnotationReviews(annotationId: number) {
+  const res = await api.get<ReviewResponse[]>(`/api/annotations/${annotationId}/reviews`);
+  return res.data;
+}
+
+export async function listProjectReviews(projectId: number) {
+  const res = await api.get<ReviewResponse[]>(`/api/projects/${projectId}/reviews`);
+  return res.data;
+}
+
+export async function submitReview(annotationId: number, data: { decision: ReviewDecision; comment?: string | null }) {
+  const res = await api.post<ReviewResponse>(`/api/annotations/${annotationId}/reviews`, data);
+  return res.data;
+}
+
+export function friendlyReviewError(error: unknown): string {
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
+    const backendMessage = (error.response?.data as { error?: string } | undefined)?.error;
+    if (status === 401) return "Session expired. Please sign in again.";
+    if (status === 403) return "You submitted this annotation yourself — a different reviewer must decide.";
+    if (status === 404) return "Annotation not found or you do not have access.";
+    if (status === 409) return backendMessage ?? "This annotation has already been reviewed.";
+    if (status === 400) return backendMessage ?? "Please check the review and try again.";
+    if (error.code === "ECONNABORTED") return "Request timed out. Please try again.";
+    if (error.message === "Network Error") return "Cannot reach the server. Is the backend running on port 8080?";
+    return backendMessage ?? "Something went wrong. Please try again.";
+  }
+  return "Something went wrong. Please try again.";
+}
+
+export type DashboardSummary = {
+  datasetCount: number;
+  projectCount: number;
+  taskCount: number;
+  tasksPending: number;
+  tasksSubmitted: number;
+  tasksApproved: number;
+  tasksRejected: number;
+  annotationCount: number;
+  reviewsApproved: number;
+  reviewsRejected: number;
+  pendingReviews: number;
+};
+
+export async function dashboardSummary() {
+  const res = await api.get<DashboardSummary>("/api/dashboard/summary");
+  return res.data;
+}

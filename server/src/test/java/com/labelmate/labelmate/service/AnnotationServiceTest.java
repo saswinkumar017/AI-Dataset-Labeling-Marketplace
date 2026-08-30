@@ -24,6 +24,7 @@ import com.labelmate.labelmate.model.User;
 import com.labelmate.labelmate.repository.AnnotationRepository;
 import com.labelmate.labelmate.repository.LabelRepository;
 import com.labelmate.labelmate.repository.ProjectRepository;
+import com.labelmate.labelmate.repository.ReviewRepository;
 import com.labelmate.labelmate.repository.TaskRepository;
 import com.labelmate.labelmate.repository.UserRepository;
 import java.lang.reflect.Field;
@@ -52,6 +53,9 @@ class AnnotationServiceTest {
 
     @Mock
     private ProjectRepository projects;
+
+    @Mock
+    private ReviewRepository reviews;
 
     @Mock
     private UserRepository users;
@@ -275,6 +279,24 @@ class AnnotationServiceTest {
     }
 
     @Test
+    void shouldRejectDeleteWhenAnnotationHasBeenReviewed() throws Exception {
+        User owner = user("owner@example.com", 1L);
+        Task task = task(owner, TaskStatus.SUBMITTED);
+        Annotation annotation = new Annotation(task, owner, AnnotationSource.HUMAN, LocalDateTime.now());
+        annotation.setContent("Positive");
+        setId(annotation, 5L);
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(annotations.findById(5L)).thenReturn(Optional.of(annotation));
+        when(reviews.existsByAnnotationId(5L)).thenReturn(true);
+
+        ApiException ex = assertThrows(
+                ApiException.class, () -> annotationService.delete(5L, "owner@example.com"));
+
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+        verify(annotations, never()).delete(any(Annotation.class));
+    }
+
+    @Test
     void shouldRejectDeleteWhenAnnotationBelongsToAnotherUser() throws Exception {
         User owner = user("owner@example.com", 1L);
         User other = user("other@example.com", 2L);
@@ -320,6 +342,42 @@ class AnnotationServiceTest {
 
         assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
         verify(annotations, never()).findByProjectIdOrderByCreatedAtDesc(any());
+    }
+
+    @Test
+    void shouldAllowAdminToReadProjectAnnotations() throws Exception {
+        User owner = user("owner@example.com", 1L);
+        User admin = user("admin@example.com", 2L);
+        admin.setRole(Role.ADMIN);
+        Task task = task(owner, TaskStatus.SUBMITTED);
+        Project project = task.getProject();
+        Annotation annotation = new Annotation(task, owner, AnnotationSource.HUMAN, LocalDateTime.now());
+        annotation.setContent("Positive");
+        when(users.findByEmail("admin@example.com")).thenReturn(Optional.of(admin));
+        when(projects.findById(10L)).thenReturn(Optional.of(project));
+        when(annotations.findByProjectIdOrderByCreatedAtDesc(10L)).thenReturn(List.of(annotation));
+
+        List<AnnotationResponse> result = annotationService.listByProject(10L, "admin@example.com");
+
+        assertEquals(1, result.size());
+        assertEquals("Positive", result.get(0).label());
+    }
+
+    @Test
+    void shouldRejectAnnotationCreationByAdminOnForeignProject() throws Exception {
+        User owner = user("owner@example.com", 1L);
+        User admin = user("admin@example.com", 2L);
+        admin.setRole(Role.ADMIN);
+        Task task = task(owner, TaskStatus.PENDING);
+        when(users.findByEmail("admin@example.com")).thenReturn(Optional.of(admin));
+        when(tasks.findById(20L)).thenReturn(Optional.of(task));
+
+        ApiException ex = assertThrows(
+                ApiException.class,
+                () -> annotationService.create(new AnnotationRequest(20L, "Admin label"), "admin@example.com"));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
+        verify(annotations, never()).save(any(Annotation.class));
     }
 
     @Test

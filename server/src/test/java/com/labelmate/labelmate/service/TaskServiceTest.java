@@ -144,6 +144,22 @@ class TaskServiceTest {
     }
 
     @Test
+    void shouldAllowAdminToListAnyProjectQueue() throws Exception {
+        User owner = user("owner@example.com", 1L);
+        User admin = user("admin@example.com", 2L);
+        admin.setRole(Role.ADMIN);
+        Project project = project(owner);
+        Task task = new Task(project, project.getDataset(), TaskStatus.PENDING, LocalDateTime.now());
+        when(users.findByEmail("admin@example.com")).thenReturn(Optional.of(admin));
+        when(projects.findById(10L)).thenReturn(Optional.of(project));
+        when(tasks.findByProjectIdOrderByItemIndexAscIdAsc(10L)).thenReturn(List.of(task));
+
+        List<TaskResponse> result = taskService.list(10L, null, "admin@example.com");
+
+        assertEquals(1, result.size());
+    }
+
+    @Test
     void shouldRejectListingWhenProjectBelongsToAnotherUser() throws Exception {
         User owner = user("owner@example.com", 1L);
         when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));

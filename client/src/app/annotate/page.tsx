@@ -12,12 +12,14 @@ import {
   friendlyAnnotationError,
   friendlyProjectError,
   friendlyTaskError,
+  listProjectReviews,
   listProjectTasks,
   listProjects,
   listTaskAnnotations,
   updateAnnotation,
   type AnnotationResponse,
   type ProjectResponse,
+  type ReviewResponse,
   type TaskResponse,
   type TaskStatus,
 } from "@/lib/api";
@@ -41,6 +43,7 @@ export default function AnnotatePage() {
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [addingItem, setAddingItem] = useState(false);
+  const [projectReviews, setProjectReviews] = useState<ReviewResponse[]>([]);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -56,8 +59,12 @@ export default function AnnotatePage() {
     setError(null);
     setNotice(null);
     try {
-      const queue = await listProjectTasks(projectId);
+      const [queue, reviews] = await Promise.all([
+        listProjectTasks(projectId),
+        listProjectReviews(projectId).catch(() => [] as ReviewResponse[]),
+      ]);
       setTasks(queue);
+      setProjectReviews(reviews);
       setIndex(0);
       setSubmitted([]);
       setLabel("");
@@ -65,6 +72,7 @@ export default function AnnotatePage() {
     } catch (err) {
       setError(friendlyTaskError(err));
       setTasks([]);
+      setProjectReviews([]);
     } finally {
       setLoadingTasks(false);
     }
@@ -371,7 +379,16 @@ export default function AnnotatePage() {
                               <span className="rounded-full bg-zinc-900 px-2.5 py-1 text-xs text-white">{a.label}</span>
                               <Badge tone={a.source === "HUMAN_APPROVED" ? "emerald" : "zinc"}>{a.source}</Badge>
                             </div>
-                            {current.status !== "APPROVED" && (
+                            {projectReviews
+                              .filter((r) => r.annotationId === a.id)
+                              .map((r) => (
+                                <p key={r.id} className="mt-2 text-xs text-zinc-500">
+                                  Reviewer {r.decision.toLowerCase()}
+                                  {r.comment ? `: "${r.comment}"` : "."}
+                                </p>
+                              ))}
+                            {current.status !== "APPROVED" &&
+                              !projectReviews.some((r) => r.annotationId === a.id) && (
                               editingId === a.id ? (
                                 <div className="mt-2 flex gap-2">
                                   <input
