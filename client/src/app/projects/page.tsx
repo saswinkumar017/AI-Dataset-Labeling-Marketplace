@@ -241,6 +241,9 @@ export default function ProjectsPage() {
                     <Link href={`/annotate?projectId=${p.id}`} className="rounded-full bg-zinc-900 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-800">
                       Annotate
                     </Link>
+                    <Link href={`/review?projectId=${p.id}`} className="rounded-full border border-zinc-200 px-3 py-1 text-xs hover:bg-zinc-50">
+                      Review
+                    </Link>
                     <button onClick={() => setExpandedId(expandedId === p.id ? null : p.id)} className="rounded-full border border-zinc-200 px-3 py-1 text-xs hover:bg-zinc-50">
                       {expandedId === p.id ? "Hide" : "View"}
                     </button>

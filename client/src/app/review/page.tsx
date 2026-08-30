@@ -75,7 +75,10 @@ export default function ReviewPage() {
         setProjects(data);
         setLoadingProjects(false);
         if (data.length === 0) return;
-        const initial = data[0].id;
+        const params = new URLSearchParams(window.location.search);
+        const wanted = Number(params.get("projectId"));
+        const initial =
+          Number.isInteger(wanted) && data.some((p) => p.id === wanted) ? wanted : data[0].id;
         setActiveId(initial);
         void loadQueue(initial);
       })

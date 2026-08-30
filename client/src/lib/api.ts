@@ -343,3 +343,22 @@ export function friendlyReviewError(error: unknown): string {
   }
   return "Something went wrong. Please try again.";
 }
+
+export type DashboardSummary = {
+  datasetCount: number;
+  projectCount: number;
+  taskCount: number;
+  tasksPending: number;
+  tasksSubmitted: number;
+  tasksApproved: number;
+  tasksRejected: number;
+  annotationCount: number;
+  reviewsApproved: number;
+  reviewsRejected: number;
+  pendingReviews: number;
+};
+
+export async function dashboardSummary() {
+  const res = await api.get<DashboardSummary>("/api/dashboard/summary");
+  return res.data;
+}
