@@ -1,5 +1,6 @@
 package com.labelmate.labelmate.exception;
 
+import com.labelmate.labelmate.service.ai.AiException;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -25,6 +26,16 @@ public class GlobalExceptionHandler {
                 .map(error -> error.getField() + " " + error.getDefaultMessage())
                 .orElse("Validation failed");
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", message));
+    }
+
+    @ExceptionHandler(AiException.class)
+    public ResponseEntity<Map<String, String>> handleAi(AiException ex) {
+        HttpStatus status = switch (ex.getReason()) {
+            case NOT_CONFIGURED -> HttpStatus.SERVICE_UNAVAILABLE;
+            case TIMEOUT -> HttpStatus.GATEWAY_TIMEOUT;
+            case PROVIDER_ERROR, INVALID_RESPONSE -> HttpStatus.BAD_GATEWAY;
+        };
+        return ResponseEntity.status(status).body(Map.of("error", ex.getMessage()));
     }
 
     @ExceptionHandler(BadCredentialsException.class)
