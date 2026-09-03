@@ -9,17 +9,21 @@ import {
   createAnnotation,
   createTask,
   deleteAnnotation,
+  friendlyAiError,
   friendlyAnnotationError,
   friendlyProjectError,
   friendlyTaskError,
+  listProjectAnnotations,
   listProjectReviews,
   listProjectTasks,
   listProjects,
   listTaskAnnotations,
+  suggestLabel,
   updateAnnotation,
   type AnnotationResponse,
   type ProjectResponse,
   type ReviewResponse,
+  type SuggestionResponse,
   type TaskResponse,
   type TaskStatus,
 } from "@/lib/api";
@@ -44,6 +48,11 @@ export default function AnnotatePage() {
   const [submitting, setSubmitting] = useState(false);
   const [addingItem, setAddingItem] = useState(false);
   const [projectReviews, setProjectReviews] = useState<ReviewResponse[]>([]);
+  const [candidates, setCandidates] = useState("");
+  const [usedLabels, setUsedLabels] = useState<string[]>([]);
+  const [suggestion, setSuggestion] = useState<SuggestionResponse | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestError, setSuggestError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -59,20 +68,30 @@ export default function AnnotatePage() {
     setError(null);
     setNotice(null);
     try {
-      const [queue, reviews] = await Promise.all([
+      const [queue, reviews, projectAnnotations] = await Promise.all([
         listProjectTasks(projectId),
         listProjectReviews(projectId).catch(() => [] as ReviewResponse[]),
+        listProjectAnnotations(projectId).catch(() => [] as AnnotationResponse[]),
       ]);
       setTasks(queue);
       setProjectReviews(reviews);
+      setUsedLabels(Array.from(new Set(projectAnnotations.map((a) => a.label))).slice(0, 20));
       setIndex(0);
       setSubmitted([]);
       setLabel("");
+      setSuggestion(null);
+      setSuggestError(null);
       setNotice(null);
+      try {
+        setCandidates(window.localStorage.getItem(`labelmate_labels_${projectId}`) ?? "");
+      } catch {
+        setCandidates("");
+      }
     } catch (err) {
       setError(friendlyTaskError(err));
       setTasks([]);
       setProjectReviews([]);
+      setUsedLabels([]);
     } finally {
       setLoadingTasks(false);
     }
@@ -221,11 +240,61 @@ export default function AnnotatePage() {
     }
   }
 
+  function parseCandidates(raw: string): string[] {
+    return Array.from(
+      new Set(
+        raw
+          .split(",")
+          .map((part) => part.trim())
+          .filter((part) => part.length > 0)
+      )
+    ).slice(0, 50);
+  }
+
+  async function onSuggest(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (!current || suggesting) return;
+    const labels = parseCandidates(candidates);
+    if (labels.length < 1) {
+      setSuggestError("Add at least one candidate label (comma-separated) first.");
+      return;
+    }
+    if (!current.itemData || !current.itemData.trim()) {
+      setSuggestError("This item has no text for the AI to read — label it manually.");
+      return;
+    }
+    setSuggesting(true);
+    setSuggestError(null);
+    try {
+      const result = await suggestLabel(current.id, labels);
+      setSuggestion(result);
+      try {
+        window.localStorage.setItem(`labelmate_labels_${activeId}`, candidates);
+      } catch {
+        // Non-fatal: suggestions work without persisting the label list.
+      }
+    } catch (err) {
+      setSuggestion(null);
+      setSuggestError(friendlyAiError(err));
+    } finally {
+      setSuggesting(false);
+    }
+  }
+
+  function acceptSuggestion() {
+    if (!suggestion) return;
+    setLabel(suggestion.suggestedLabel);
+    setSuggestion(null);
+    setNotice(`AI suggested “${suggestion.suggestedLabel}” — check it and submit when you agree.`);
+  }
+
   function go(delta: number) {
     setIndex((i) => Math.min(Math.max(i + delta, 0), Math.max(tasks.length - 1, 0)));
     setLabel("");
     setSubmitted([]);
     setEditingId(null);
+    setSuggestion(null);
+    setSuggestError(null);
     setNotice(null);
     setError(null);
   }
@@ -367,6 +436,92 @@ export default function AnnotatePage() {
                         Next →
                       </button>
                     </div>
+                  </Card>
+
+                  <Card className="mt-4">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                      AI assistance <span className="font-normal normal-case">(optional — never submits for you)</span>
+                    </div>
+                    {usedLabels.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {usedLabels.map((used) => (
+                          <button
+                            key={used}
+                            type="button"
+                            onClick={() =>
+                              setCandidates((prev) =>
+                                parseCandidates(prev).includes(used) ? prev : prev ? `${prev}, ${used}` : used
+                              )
+                            }
+                            className="rounded-full border border-zinc-200 px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
+                          >
+                            {used}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <form onSubmit={onSuggest} className="mt-2 flex gap-2">
+                      <input
+                        value={candidates}
+                        onChange={(e) => setCandidates(e.target.value)}
+                        placeholder="Candidate labels, comma-separated — e.g. Positive, Negative"
+                        maxLength={2000}
+                        className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-900"
+                      />
+                      <button
+                        type="submit"
+                        disabled={suggesting || current.status === "APPROVED"}
+                        className={`shrink-0 rounded-full px-4 py-2 text-xs font-medium text-white ${
+                          suggesting || current.status === "APPROVED" ? "bg-zinc-400" : "bg-indigo-600 hover:bg-indigo-700"
+                        }`}
+                      >
+                        {suggesting ? "Thinking…" : "Suggest label"}
+                      </button>
+                    </form>
+                    {suggestError && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <p role="alert" className="text-xs text-amber-700">{suggestError}</p>
+                        <button
+                          type="button"
+                          onClick={() => onSuggest()}
+                          disabled={suggesting}
+                          className="rounded-full border border-zinc-200 px-3 py-1 text-xs hover:bg-zinc-50 disabled:opacity-40"
+                        >
+                          Retry
+                        </button>
+                      </div>
+                    )}
+                    {suggestion && (
+                      <div className="mt-3 rounded-lg bg-indigo-50 p-3 ring-1 ring-indigo-200">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="rounded-full bg-indigo-600 px-2.5 py-1 text-xs text-white">
+                            AI suggests: {suggestion.suggestedLabel}
+                          </span>
+                          <span className="text-xs text-indigo-700">
+                            {suggestion.confidence !== null ? `${Number(suggestion.confidence).toFixed(0)}% confident` : "no confidence given"} · {suggestion.model}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs text-indigo-700">
+                          Check it against the item — accept to fill the label box, then edit and submit only if you agree.
+                        </p>
+                        <div className="mt-2 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={acceptSuggestion}
+                            className="rounded-full bg-zinc-900 px-4 py-1.5 text-xs font-medium text-white hover:bg-zinc-800"
+                          >
+                            Accept into label box
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSuggestion(null)}
+                            className="rounded-full border border-indigo-200 bg-white px-4 py-1.5 text-xs hover:bg-indigo-100"
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </Card>
 
                   {submitted.length > 0 && (

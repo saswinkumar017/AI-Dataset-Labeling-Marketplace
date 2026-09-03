@@ -362,3 +362,33 @@ export async function dashboardSummary() {
   const res = await api.get<DashboardSummary>("/api/dashboard/summary");
   return res.data;
 }
+
+export type SuggestionResponse = {
+  id: number;
+  taskId: number;
+  suggestedLabel: string;
+  confidence: number | null;
+  model: string;
+  createdAt: string;
+};
+
+export async function suggestLabel(taskId: number, labels: string[]) {
+  const res = await api.post<SuggestionResponse>(`/api/tasks/${taskId}/suggest`, { labels });
+  return res.data;
+}
+
+export function friendlyAiError(error: unknown): string {
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
+    const backendMessage = (error.response?.data as { error?: string } | undefined)?.error;
+    if (status === 401) return "Session expired. Please sign in again.";
+    if (status === 404) return "Task not found or you do not have access.";
+    if (status === 400) return backendMessage ?? "Add candidate labels (1-50) and try again.";
+    if (status === 503 || status === 502 || status === 504)
+      return "AI assistance is unavailable right now — you can still label manually.";
+    if (error.code === "ECONNABORTED") return "Request timed out. Please try again.";
+    if (error.message === "Network Error") return "Cannot reach the server. Is the backend running on port 8080?";
+    return backendMessage ?? "Something went wrong. Please try again.";
+  }
+  return "Something went wrong. Please try again.";
+}
