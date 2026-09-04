@@ -5,7 +5,7 @@ import AppShell from "@/components/AppShell";
 import Card from "@/components/Card";
 import Badge from "@/components/Badge";
 import RequireAuth from "@/components/RequireAuth";
-import { createProject, deleteProject, friendlyDatasetError, friendlyProjectError, listDatasets, listProjects, updateProject, type DatasetResponse, type ProjectResponse } from "@/lib/api";
+import { createProject, deleteProject, exportProject, friendlyDatasetError, friendlyExportError, friendlyProjectError, listDatasets, listProjects, updateProject, type DatasetResponse, type ProjectResponse } from "@/lib/api";
 
 type FormState = {
   datasetId: string;
@@ -32,6 +32,7 @@ export default function ProjectsPage() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [exportingId, setExportingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<FormState>(emptyForm);
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
@@ -153,6 +154,27 @@ export default function ProjectsPage() {
     }
   }
 
+  async function onExport(id: number, format: "json" | "csv") {
+    if (exportingId !== null) return;
+    setExportingId(id);
+    setError(null);
+    try {
+      const blob = await exportProject(id, format);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `project-${id}-export.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(friendlyExportError(err));
+    } finally {
+      setExportingId(null);
+    }
+  }
+
   async function onDelete(id: number) {
     if (!confirm("Delete this project? This cannot be undone.")) return;
     setError(null);
@@ -255,6 +277,12 @@ export default function ProjectsPage() {
                       className="rounded-full border border-zinc-200 px-3 py-1 text-xs hover:bg-zinc-50"
                     >
                       Edit
+                    </button>
+                    <button onClick={() => onExport(p.id, "json")} disabled={exportingId === p.id} className="rounded-full border border-zinc-200 px-3 py-1 text-xs hover:bg-zinc-50 disabled:opacity-40">
+                      {exportingId === p.id ? "Exporting…" : "Export JSON"}
+                    </button>
+                    <button onClick={() => onExport(p.id, "csv")} disabled={exportingId === p.id} className="rounded-full border border-zinc-200 px-3 py-1 text-xs hover:bg-zinc-50 disabled:opacity-40">
+                      {exportingId === p.id ? "Exporting…" : "Export CSV"}
                     </button>
                     <button onClick={() => onDelete(p.id)} className="rounded-full border border-red-200 bg-white px-3 py-1 text-xs text-red-600 hover:bg-red-50">
                       Delete

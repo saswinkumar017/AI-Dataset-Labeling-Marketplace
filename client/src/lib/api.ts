@@ -392,3 +392,24 @@ export function friendlyAiError(error: unknown): string {
   }
   return "Something went wrong. Please try again.";
 }
+
+export async function exportProject(projectId: number, format: "json" | "csv") {
+  const res = await api.get(`/api/projects/${projectId}/export`, {
+    params: { format },
+    responseType: "blob",
+  });
+  return res.data as Blob;
+}
+
+export function friendlyExportError(error: unknown): string {
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
+    if (status === 401) return "Session expired. Please sign in again.";
+    if (status === 404) return "Project not found or you do not have access.";
+    if (status === 400) return "Only verified annotations can be exported in json or csv format.";
+    if (error.code === "ECONNABORTED") return "Request timed out. Please try again.";
+    if (error.message === "Network Error") return "Cannot reach the server. Is the backend running on port 8080?";
+    return "Export failed. Please try again.";
+  }
+  return "Export failed. Please try again.";
+}
