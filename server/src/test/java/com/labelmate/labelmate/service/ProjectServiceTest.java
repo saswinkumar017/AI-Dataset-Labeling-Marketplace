@@ -228,4 +228,29 @@ class ProjectServiceTest {
 
         assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatus());
     }
+    @Test
+    void shouldTrimProjectNameOnCreate() throws Exception {
+        User owner = owner();
+        Dataset dataset = dataset(owner);
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(datasets.findByIdAndOwnerId(7L, owner.getId())).thenReturn(Optional.of(dataset));
+        when(projects.save(any(Project.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ProjectResponse response = projectService.create(
+                new ProjectRequest(7L, "  Spaced Name  ", null, null), "owner@example.com");
+
+        assertEquals("Spaced Name", response.name());
+    }
+
+    @Test
+    void shouldRejectDeleteWhenUserIsUnknown() {
+        when(users.findByEmail("ghost@example.com")).thenReturn(Optional.empty());
+
+        ApiException ex = assertThrows(
+                ApiException.class, () -> projectService.delete(1L, "ghost@example.com"));
+
+        assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatus());
+        verify(projects, never()).delete(any(Project.class));
+    }
+
 }

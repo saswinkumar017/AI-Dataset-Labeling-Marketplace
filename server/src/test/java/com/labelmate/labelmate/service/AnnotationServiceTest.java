@@ -15,6 +15,7 @@ import com.labelmate.labelmate.model.Annotation;
 import com.labelmate.labelmate.model.AnnotationSource;
 import com.labelmate.labelmate.model.Dataset;
 import com.labelmate.labelmate.model.DatasetStatus;
+import com.labelmate.labelmate.model.Label;
 import com.labelmate.labelmate.model.Project;
 import com.labelmate.labelmate.model.ProjectStatus;
 import com.labelmate.labelmate.model.Role;
@@ -396,4 +397,64 @@ class AnnotationServiceTest {
         assertEquals("Positive", result.get(0).label());
         verify(annotations).findByTaskIdOrderByCreatedAtDesc(20L);
     }
+    @Test
+    void shouldLinkExistingLabelOnCreate() throws Exception {
+        User owner = user("owner@example.com", 1L);
+        Task task = task(owner, TaskStatus.PENDING);
+        Label positive = new Label(task.getProject(), "Positive", LocalDateTime.now());
+        setId(positive, 50L);
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(tasks.findById(20L)).thenReturn(Optional.of(task));
+        when(labels.findByProjectIdAndName(10L, "Positive")).thenReturn(Optional.of(positive));
+        when(annotations.save(any(Annotation.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        AnnotationResponse response =
+                annotationService.create(new AnnotationRequest(20L, "Positive"), "owner@example.com");
+
+        assertEquals("Positive", response.label());
+        assertEquals(50L, response.labelId());
+    }
+
+    @Test
+    void shouldRelinkLabelOnUpdate() throws Exception {
+        User owner = user("owner@example.com", 1L);
+        Task task = task(owner, TaskStatus.SUBMITTED);
+        Label oldLabel = new Label(task.getProject(), "Old", LocalDateTime.now());
+        Label newLabel = new Label(task.getProject(), "New", LocalDateTime.now());
+        setId(newLabel, 51L);
+        Annotation annotation = new Annotation(task, owner, AnnotationSource.HUMAN, LocalDateTime.now());
+        annotation.setContent("Old");
+        annotation.setLabel(oldLabel);
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(annotations.findById(5L)).thenReturn(Optional.of(annotation));
+        when(labels.findByProjectIdAndName(10L, "New")).thenReturn(Optional.of(newLabel));
+        when(annotations.save(any(Annotation.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        AnnotationResponse response =
+                annotationService.update(5L, new AnnotationUpdateRequest("New"), "owner@example.com");
+
+        assertEquals("New", response.label());
+        assertEquals(51L, response.labelId());
+    }
+
+    @Test
+    void shouldKeepTaskSubmittedWhenSiblingsRemainOnDelete() throws Exception {
+        User owner = user("owner@example.com", 1L);
+        Task task = task(owner, TaskStatus.SUBMITTED);
+        Annotation annotation = new Annotation(task, owner, AnnotationSource.HUMAN, LocalDateTime.now());
+        annotation.setContent("Positive");
+        Annotation sibling = new Annotation(task, owner, AnnotationSource.HUMAN, LocalDateTime.now());
+        sibling.setContent("Negative");
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(annotations.findById(5L)).thenReturn(Optional.of(annotation));
+        when(reviews.existsByAnnotationId(any())).thenReturn(false);
+        when(annotations.findByTaskIdOrderByCreatedAtDesc(20L)).thenReturn(List.of(sibling));
+
+        annotationService.delete(5L, "owner@example.com");
+
+        verify(annotations).delete(annotation);
+        assertEquals(TaskStatus.SUBMITTED, task.getStatus());
+        verify(tasks, never()).save(any(Task.class));
+    }
+
 }

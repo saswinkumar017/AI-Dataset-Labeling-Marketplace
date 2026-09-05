@@ -152,4 +152,32 @@ class DashboardServiceTest {
 
         assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatus());
     }
+    @Test
+    void shouldCountRejectedWork() throws Exception {
+        User owner = user("owner@example.com", 1L);
+        Dataset dataset = new Dataset(owner, "Reviews", DatasetStatus.READY, LocalDateTime.now());
+        Project project = new Project(dataset, owner, "Sentiment v1", ProjectStatus.DRAFT, LocalDateTime.now());
+        setId(project, 10L);
+        Task rejected = new Task(project, dataset, TaskStatus.REJECTED, LocalDateTime.now());
+        Annotation annotation = new Annotation(rejected, owner, AnnotationSource.HUMAN, LocalDateTime.now());
+        annotation.setContent("Positive");
+        setId(annotation, 30L);
+        com.labelmate.labelmate.model.Review review = new com.labelmate.labelmate.model.Review(
+                annotation, owner, ReviewDecision.REJECTED, LocalDateTime.now());
+
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(datasets.findByOwnerIdOrderByCreatedAtDesc(1L)).thenReturn(List.of(dataset));
+        when(projects.findByOwnerIdOrderByCreatedAtDesc(1L)).thenReturn(List.of(project));
+        when(tasks.findByProjectIdOrderByItemIndexAscIdAsc(10L)).thenReturn(List.of(rejected));
+        when(annotations.findByProjectIdOrderByCreatedAtDesc(10L)).thenReturn(List.of(annotation));
+        when(reviews.findByProjectIdOrderByReviewedAtDesc(10L)).thenReturn(List.of(review));
+
+        DashboardSummary summary = dashboardService.summarize("owner@example.com");
+
+        assertEquals(1, summary.tasksRejected());
+        assertEquals(1, summary.reviewsRejected());
+        assertEquals(0, summary.pendingReviews());
+        assertEquals(0, summary.tasksApproved());
+    }
+
 }

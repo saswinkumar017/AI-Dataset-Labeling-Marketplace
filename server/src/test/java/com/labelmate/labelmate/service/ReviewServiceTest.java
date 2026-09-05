@@ -271,4 +271,39 @@ class ReviewServiceTest {
         assertEquals(1, result.size());
         assertEquals(ReviewDecision.APPROVED, result.get(0).decision());
     }
+    @Test
+    void shouldLetOwnerReadReviewsOfOwnAnnotation() throws Exception {
+        User owner = user("owner@example.com", 1L, Role.ANNOTATOR);
+        User admin = user("admin@example.com", 2L, Role.ADMIN);
+        Annotation annotation = annotation(owner, owner, TaskStatus.APPROVED);
+        com.labelmate.labelmate.model.Review review = new com.labelmate.labelmate.model.Review(
+                annotation, admin, ReviewDecision.APPROVED, LocalDateTime.now());
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(annotations.findById(30L)).thenReturn(Optional.of(annotation));
+        when(reviews.findByAnnotationIdOrderByReviewedAtDesc(30L)).thenReturn(List.of(review));
+
+        List<ReviewResponse> result = reviewService.listByAnnotation(30L, "owner@example.com");
+
+        assertEquals(1, result.size());
+        assertEquals(ReviewDecision.APPROVED, result.get(0).decision());
+    }
+
+    @Test
+    void shouldLetAdminListAnyProjectReviews() throws Exception {
+        User owner = user("owner@example.com", 1L, Role.ANNOTATOR);
+        User admin = user("admin@example.com", 2L, Role.ADMIN);
+        Annotation annotation = annotation(owner, owner, TaskStatus.APPROVED);
+        com.labelmate.labelmate.model.Review review = new com.labelmate.labelmate.model.Review(
+                annotation, admin, ReviewDecision.REJECTED, LocalDateTime.now());
+        Project project = annotation.getTask().getProject();
+        when(users.findByEmail("admin@example.com")).thenReturn(Optional.of(admin));
+        when(projects.findById(10L)).thenReturn(Optional.of(project));
+        when(reviews.findByProjectIdOrderByReviewedAtDesc(10L)).thenReturn(List.of(review));
+
+        List<ReviewResponse> result = reviewService.listByProject(10L, "admin@example.com");
+
+        assertEquals(1, result.size());
+        assertEquals(ReviewDecision.REJECTED, result.get(0).decision());
+    }
+
 }

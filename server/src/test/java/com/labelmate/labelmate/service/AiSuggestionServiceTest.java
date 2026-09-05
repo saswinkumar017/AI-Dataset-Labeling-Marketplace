@@ -204,5 +204,23 @@ class AiSuggestionServiceTest {
 
         assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatus());
     }
+    @Test
+    void shouldSkipBlankCandidateLabels() throws Exception {
+        User owner = user("owner@example.com", 1L, Role.ANNOTATOR);
+        Task task = task(owner, "I love it.");
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(tasks.findById(20L)).thenReturn(Optional.of(task));
+        when(suggestionService.suggest("I love it.", List.of("Positive"), "Pick sentiment."))
+                .thenReturn(new SuggestionResult("Positive", null, "openrouter/auto"));
+        when(labels.findByProjectIdAndName(10L, "Positive")).thenReturn(Optional.empty());
+        when(suggestions.save(any(com.labelmate.labelmate.model.AiSuggestion.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        SuggestionResponse response = aiSuggestionService.suggest(
+                20L, new SuggestRequest(List.of("  ", "Positive", "")), "owner@example.com");
+
+        assertEquals("Positive", response.suggestedLabel());
+        verify(suggestionService).suggest("I love it.", List.of("Positive"), "Pick sentiment.");
+    }
 
 }

@@ -123,4 +123,24 @@ class AuthServiceTest {
         assertNotEquals("secret123", saved.getValue().getPasswordHash());
         assertEquals("bcrypt-hashed-value", saved.getValue().getPasswordHash());
     }
+    @Test
+    void shouldReturnUserWhenEmailExists() {
+        User user = new User("asha@example.com", "Asha", "hashed", Role.ANNOTATOR, LocalDateTime.now());
+        when(users.findByEmail("asha@example.com")).thenReturn(Optional.of(user));
+
+        UserResponse response = authService.findByEmail("asha@example.com");
+
+        assertEquals("asha@example.com", response.email());
+        assertEquals(Role.ANNOTATOR, response.role());
+    }
+
+    @Test
+    void shouldReturnNotFoundWhenUserIsUnknown() {
+        when(users.findByEmail("ghost@example.com")).thenReturn(Optional.empty());
+
+        ApiException ex = assertThrows(ApiException.class, () -> authService.findByEmail("ghost@example.com"));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
+    }
+
 }

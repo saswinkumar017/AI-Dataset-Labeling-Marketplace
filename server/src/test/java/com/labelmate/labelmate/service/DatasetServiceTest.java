@@ -150,4 +150,32 @@ class DatasetServiceTest {
         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
         verify(datasets, never()).save(any(Dataset.class));
     }
+    @Test
+    void shouldRejectUnsafeFilePathOnUpdate() throws Exception {
+        User owner = owner();
+        com.labelmate.labelmate.model.Dataset dataset =
+                new com.labelmate.labelmate.model.Dataset(owner, "Old", DatasetStatus.READY, LocalDateTime.now());
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(datasets.findByIdAndOwnerId(1L, owner.getId())).thenReturn(Optional.of(dataset));
+
+        DatasetRequest request = new DatasetRequest(
+                "New", null, "reviews.csv", "../etc/passwd", null, null);
+
+        ApiException ex = assertThrows(
+                ApiException.class, () -> datasetService.update(1L, request, "owner@example.com"));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+        verify(datasets, never()).save(any(com.labelmate.labelmate.model.Dataset.class));
+    }
+
+    @Test
+    void shouldRejectListingWhenUserIsUnknown() {
+        when(users.findByEmail("ghost@example.com")).thenReturn(Optional.empty());
+
+        ApiException ex = assertThrows(
+                ApiException.class, () -> datasetService.listMine("ghost@example.com"));
+
+        assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatus());
+    }
+
 }

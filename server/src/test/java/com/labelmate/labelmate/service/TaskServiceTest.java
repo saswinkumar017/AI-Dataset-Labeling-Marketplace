@@ -170,4 +170,20 @@ class TaskServiceTest {
 
         assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
     }
+    @Test
+    void shouldStoreItemDetailsOnCreate() throws Exception {
+        User owner = user("owner@example.com", 1L);
+        Project project = project(owner);
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(projects.findByIdAndOwnerId(10L, 1L)).thenReturn(Optional.of(project));
+        when(tasks.save(any(Task.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        TaskResponse response =
+                taskService.create(10L, new TaskRequest("Item text.", 3), "owner@example.com");
+
+        assertEquals("Item text.", response.itemData());
+        assertEquals(3, response.itemIndex());
+        assertEquals(10L, response.projectId());
+    }
+
 }
