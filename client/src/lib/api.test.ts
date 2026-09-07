@@ -43,7 +43,7 @@ describe("friendlyAuthError", () => {
     expect(friendlyAuthError(axiosError(undefined, undefined, "ECONNABORTED"))).toContain("timed out");
     const network = axiosError();
     network.message = "Network Error";
-    expect(friendlyAuthError(network)).toContain("port 8080");
+    expect(friendlyAuthError(network)).toContain("backend running");
   });
 
   it("falls back for unknown input", () => {

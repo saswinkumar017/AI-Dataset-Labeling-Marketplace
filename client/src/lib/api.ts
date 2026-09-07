@@ -169,7 +169,7 @@ export function friendlyAuthError(error: unknown): string {
     if (status === 401) return "Incorrect email or password. Please try again.";
     if (status === 400) return backendMessage ?? "Please check your details and try again.";
     if (error.code === "ECONNABORTED") return "Request timed out. Please try again.";
-    if (error.message === "Network Error") return "Cannot reach the server. Is the backend running on port 8080?";
+    if (error.message === "Network Error") return "Cannot reach the server. Is the backend running and is this page origin allowed (CORS)?";
     return backendMessage ?? "Something went wrong. Please try again.";
   }
   return "Something went wrong. Please try again.";
@@ -183,7 +183,7 @@ export function friendlyDatasetError(error: unknown): string {
     if (status === 404) return "Dataset not found or you do not have access.";
     if (status === 400) return backendMessage ?? "Please check the dataset details.";
     if (error.code === "ECONNABORTED") return "Request timed out. Please try again.";
-    if (error.message === "Network Error") return "Cannot reach the server. Is the backend running on port 8080?";
+    if (error.message === "Network Error") return "Cannot reach the server. Is the backend running and is this page origin allowed (CORS)?";
     return backendMessage ?? "Something went wrong. Please try again.";
   }
   return "Something went wrong. Please try again.";
@@ -197,7 +197,7 @@ export function friendlyProjectError(error: unknown): string {
     if (status === 404) return "Project not found or you do not have access.";
     if (status === 400) return backendMessage ?? "Please check the project details.";
     if (error.code === "ECONNABORTED") return "Request timed out. Please try again.";
-    if (error.message === "Network Error") return "Cannot reach the server. Is the backend running on port 8080?";
+    if (error.message === "Network Error") return "Cannot reach the server. Is the backend running and is this page origin allowed (CORS)?";
     return backendMessage ?? "Something went wrong. Please try again.";
   }
   return "Something went wrong. Please try again.";
@@ -279,7 +279,7 @@ export function friendlyTaskError(error: unknown): string {
     if (status === 404) return "Task or project not found, or you do not have access.";
     if (status === 400) return backendMessage ?? "Please check the task details.";
     if (error.code === "ECONNABORTED") return "Request timed out. Please try again.";
-    if (error.message === "Network Error") return "Cannot reach the server. Is the backend running on port 8080?";
+    if (error.message === "Network Error") return "Cannot reach the server. Is the backend running and is this page origin allowed (CORS)?";
     return backendMessage ?? "Something went wrong. Please try again.";
   }
   return "Something went wrong. Please try again.";
@@ -294,7 +294,7 @@ export function friendlyAnnotationError(error: unknown): string {
     if (status === 409) return backendMessage ?? "This item can no longer be annotated.";
     if (status === 400) return backendMessage ?? "Please check the annotation and try again.";
     if (error.code === "ECONNABORTED") return "Request timed out. Please try again.";
-    if (error.message === "Network Error") return "Cannot reach the server. Is the backend running on port 8080?";
+    if (error.message === "Network Error") return "Cannot reach the server. Is the backend running and is this page origin allowed (CORS)?";
     return backendMessage ?? "Something went wrong. Please try again.";
   }
   return "Something went wrong. Please try again.";
@@ -338,7 +338,7 @@ export function friendlyReviewError(error: unknown): string {
     if (status === 409) return backendMessage ?? "This annotation has already been reviewed.";
     if (status === 400) return backendMessage ?? "Please check the review and try again.";
     if (error.code === "ECONNABORTED") return "Request timed out. Please try again.";
-    if (error.message === "Network Error") return "Cannot reach the server. Is the backend running on port 8080?";
+    if (error.message === "Network Error") return "Cannot reach the server. Is the backend running and is this page origin allowed (CORS)?";
     return backendMessage ?? "Something went wrong. Please try again.";
   }
   return "Something went wrong. Please try again.";
@@ -387,7 +387,7 @@ export function friendlyAiError(error: unknown): string {
     if (status === 503 || status === 502 || status === 504)
       return "AI assistance is unavailable right now — you can still label manually.";
     if (error.code === "ECONNABORTED") return "Request timed out. Please try again.";
-    if (error.message === "Network Error") return "Cannot reach the server. Is the backend running on port 8080?";
+    if (error.message === "Network Error") return "Cannot reach the server. Is the backend running and is this page origin allowed (CORS)?";
     return backendMessage ?? "Something went wrong. Please try again.";
   }
   return "Something went wrong. Please try again.";
@@ -408,7 +408,7 @@ export function friendlyExportError(error: unknown): string {
     if (status === 404) return "Project not found or you do not have access.";
     if (status === 400) return "Only verified annotations can be exported in json or csv format.";
     if (error.code === "ECONNABORTED") return "Request timed out. Please try again.";
-    if (error.message === "Network Error") return "Cannot reach the server. Is the backend running on port 8080?";
+    if (error.message === "Network Error") return "Cannot reach the server. Is the backend running and is this page origin allowed (CORS)?";
     return "Export failed. Please try again.";
   }
   return "Export failed. Please try again.";
