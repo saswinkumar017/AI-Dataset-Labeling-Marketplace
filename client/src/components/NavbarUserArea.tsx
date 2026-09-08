@@ -24,6 +24,9 @@ export default function NavbarUserArea() {
       <Link href="/projects" className="hidden text-sm text-zinc-600 hover:text-zinc-900 md:block">Projects</Link>
       <Link href="/annotate" className="hidden text-sm text-zinc-600 hover:text-zinc-900 md:block">Annotate</Link>
       <Link href="/review" className="hidden text-sm text-zinc-600 hover:text-zinc-900 md:block">Review</Link>
+      {user.role === "ADMIN" && (
+        <Link href="/admin" className="hidden text-sm font-medium text-zinc-900 hover:text-zinc-700 md:block">Admin</Link>
+      )}
       <span className="hidden rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-700 sm:block">
         {user.username} · {user.role}
       </span>

@@ -413,3 +413,39 @@ export function friendlyExportError(error: unknown): string {
   }
   return "Export failed. Please try again.";
 }
+
+export type AdminOverview = {
+  userCount: number;
+  datasetCount: number;
+  projectCount: number;
+  taskCount: number;
+  annotationCount: number;
+  reviewCount: number;
+  reviewsApproved: number;
+  reviewsRejected: number;
+  suggestionCount: number;
+};
+
+export async function adminOverview() {
+  const res = await api.get<AdminOverview>("/api/admin/overview");
+  return res.data;
+}
+
+export async function listAdminUsers() {
+  const res = await api.get<BackendUser[]>("/api/admin/users");
+  return res.data;
+}
+
+export function friendlyAdminError(error: unknown): string {
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
+    const backendMessage = (error.response?.data as { error?: string } | undefined)?.error;
+    if (status === 401) return "Session expired. Please sign in again.";
+    if (status === 403) return "Admin access required. This area is limited to administrators.";
+    if (status === 404) return backendMessage ?? "Resource not found.";
+    if (error.code === "ECONNABORTED") return "Request timed out. Please try again.";
+    if (error.message === "Network Error") return "Cannot reach the server. Is the backend running and is this page origin allowed (CORS)?";
+    return backendMessage ?? "Something went wrong. Please try again.";
+  }
+  return "Something went wrong. Please try again.";
+}
