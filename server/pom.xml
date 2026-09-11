@@ -66,6 +66,12 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
+        <!-- Actuator: liveness/readiness probes (health only, no internals) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
         <!-- Spring AI (OpenAI-compatible chat; pointed at OpenRouter via base-url).
              Dormant by default (spring.ai.model.chat=none); enable explicitly. -->
         <dependency>

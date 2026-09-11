@@ -40,9 +40,8 @@ services:
     ports:
       - "8080:8080"
     healthcheck:
-      # Interim liveness probe: public API docs prove the Spring context is up.
-      # Commit 37 replaces this with /actuator/health (app + database).
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/v3/api-docs > /dev/null"]
+      # Actuator health covers the app and the database connection.
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health > /dev/null"]
       interval: 15s
       timeout: 5s
       retries: 5
