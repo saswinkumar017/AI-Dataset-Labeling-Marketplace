@@ -14,12 +14,13 @@ LabelMate uses a **single relational MySQL 8 database** accessed via Spring Data
 Dataset → Project → Task → Annotation → AI Suggestion → Human Review → Final Label → Export
 ```
 
-Eight tables cover the initial scope. No microservices, no event tables, no billing tables at this stage. Every table uses InnoDB, `utf8mb4`, and surrogate `BIGINT` primary keys. Ownership is explicit and enforced server-side.
+Nine tables cover the current scope. No microservices, no event tables, no billing tables at this stage. Every table uses InnoDB, `utf8mb4`, and surrogate `BIGINT` primary keys. Ownership is explicit and enforced server-side.
 
-Tables (initial scope):
+Tables (current scope):
 
 - `users`
 - `datasets`
+- `dataset_items`
 - `projects`
 - `labels`
 - `tasks`
@@ -90,8 +91,21 @@ No `is_active` yet — deferred to future scope to keep Day 4 simple.
 | `file_path` | `VARCHAR(500)` | YES | Sanitized relative path — validated against path traversal |
 | `file_size_bytes` | `BIGINT` | YES | From upload validation |
 | `checksum_sha256` | `VARCHAR(64)` | YES | Optional dedup aid |
+| `columns_json` | `TEXT` | YES | Ordered column header for tabular datasets (JSON array); null = single-content |
 | `created_at` | `DATETIME` | NO | |
 | `updated_at` | `DATETIME` | YES | |
+
+### 4.2b `dataset_items`
+
+| Column | Type | Null | Notes |
+|---|---|---|---|
+| `id` | `BIGINT AUTO_INCREMENT` | NO | PK |
+| `dataset_id` | `BIGINT` | NO | FK → `datasets.id` — the raw content pool tasks generate from |
+| `content` | `TEXT` | NO | Full text, row summary (`col: val \| …`), or image caption/filename |
+| `row_data_json` | `TEXT` | YES | Full multi-column row as a JSON object; null for text/image items |
+| `image_url` | `VARCHAR(1024)` | YES | e.g., `/uploads/images/uuid.png`; null for non-image items |
+| `media_type` | `VARCHAR(64)` | YES | e.g., `image/png`; null for non-image items |
+| `created_at` | `DATETIME` | NO | |
 
 ### 4.3 `projects`
 
@@ -124,6 +138,7 @@ No `is_active` yet — deferred to future scope to keep Day 4 simple.
 | `id` | `BIGINT AUTO_INCREMENT` | NO | PK |
 | `project_id` | `BIGINT` | NO | FK → `projects.id` |
 | `dataset_id` | `BIGINT` | NO | FK → `datasets.id` — denormalized for ownership filtering without extra joins |
+| `dataset_item_id` | `BIGINT` | YES | FK → `dataset_items.id` — set for generated tasks; null for manually queued items |
 | `item_index` | `INT` | YES | Position inside the dataset (0-based) — useful for export ordering |
 | `item_data` | `TEXT` | YES | Snippet or file reference for the item (image path or text excerpt) |
 | `status` | `ENUM('PENDING','ASSIGNED','IN_PROGRESS','SUBMITTED','APPROVED','REJECTED')` | NO | Default `PENDING` |
@@ -185,6 +200,7 @@ Example:
 ```sql
 users        PK (id)
 datasets     PK (id)
+dataset_items PK (id)
 projects     PK (id)
 labels       PK (id)
 tasks        PK (id)
@@ -202,11 +218,13 @@ All foreign keys are enforced by InnoDB and indexed automatically. Deletion uses
 | FK | From | To | On Delete | On Update |
 |---|---|---|---|---|
 | `datasets.owner_id` | `datasets` | `users.id` | `RESTRICT` | `CASCADE` |
+| `dataset_items.dataset_id` | `dataset_items` | `datasets.id` | `RESTRICT` | `CASCADE` |
 | `projects.dataset_id` | `projects` | `datasets.id` | `RESTRICT` | `CASCADE` |
 | `projects.owner_id` | `projects` | `users.id` | `RESTRICT` | `CASCADE` |
 | `labels.project_id` | `labels` | `projects.id` | `RESTRICT` | `CASCADE` |
 | `tasks.project_id` | `tasks` | `projects.id` | `RESTRICT` | `CASCADE` |
 | `tasks.dataset_id` | `tasks` | `datasets.id` | `RESTRICT` | `CASCADE` |
+| `tasks.dataset_item_id` | `tasks` | `dataset_items.id` | `RESTRICT` | `CASCADE` |
 | `tasks.assigned_to` | `tasks` | `users.id` | `SET NULL` | `CASCADE` |
 | `annotations.task_id` | `annotations` | `tasks.id` | `RESTRICT` | `CASCADE` |
 | `annotations.annotator_id` | `annotations` | `users.id` | `RESTRICT` | `CASCADE` |
