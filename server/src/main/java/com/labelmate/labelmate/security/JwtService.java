@@ -20,6 +20,13 @@ public class JwtService {
     public JwtService(
             @Value("${app.jwt.secret}") String secret,
             @Value("${app.jwt.expiration-ms:86400000}") long expirationMs) {
+        if (secret == null || secret.length() < 32) {
+            throw new IllegalStateException(
+                    "JWT_SECRET is not set or is shorter than 32 characters. "
+                            + "For local development: copy server/.env.example to server/.env and set JWT_SECRET "
+                            + "(generate one with: openssl rand -base64 48). "
+                            + "For Docker: set JWT_SECRET in the root .env file.");
+        }
         this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.expirationMs = expirationMs;
     }

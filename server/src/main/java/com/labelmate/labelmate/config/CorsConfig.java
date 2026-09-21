@@ -11,11 +11,18 @@ import java.util.List;
 @Configuration
 public class CorsConfig {
 
-    @Value("${app.cors.allowed-origins:http://localhost:3000}")
+    @Value("${app.cors.allowed-origins}")
     private String allowedOrigins;
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
+        if (allowedOrigins == null || allowedOrigins.isBlank()) {
+            throw new IllegalStateException(
+                    "CORS_ALLOWED_ORIGINS is not set. "
+                            + "For local development: copy server/.env.example to server/.env and set "
+                            + "CORS_ALLOWED_ORIGINS (e.g. http://localhost:3000). "
+                            + "For Docker: set CORS_ALLOWED_ORIGINS in the root .env file.");
+        }
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(List.of(allowedOrigins.split(",")));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));

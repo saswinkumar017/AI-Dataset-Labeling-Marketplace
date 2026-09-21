@@ -1,0 +1,7 @@
+# Registers the local dotenv loader (see config/DotenvLoader.java).
+# NOTE: this must stay in spring.factories — the ".imports" file convention
+# only applies to auto-configuration; other factory types like
+# EnvironmentPostProcessor are still discovered through spring.factories,
+# and a misplaced registration is ignored silently.
+org.springframework.boot.env.EnvironmentPostProcessor=\
+com.labelmate.labelmate.config.DotenvLoader
