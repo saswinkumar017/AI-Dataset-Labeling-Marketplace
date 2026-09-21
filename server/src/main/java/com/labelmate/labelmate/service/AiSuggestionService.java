@@ -1,9 +1,12 @@
 package com.labelmate.labelmate.service;
 
+import com.labelmate.labelmate.dto.AnnotationResponse;
+import com.labelmate.labelmate.dto.AutoLabelRequest;
 import com.labelmate.labelmate.dto.SuggestRequest;
 import com.labelmate.labelmate.dto.SuggestionResponse;
 import com.labelmate.labelmate.exception.ApiException;
 import com.labelmate.labelmate.model.AiSuggestion;
+import com.labelmate.labelmate.model.Label;
 import com.labelmate.labelmate.model.Role;
 import com.labelmate.labelmate.model.Task;
 import com.labelmate.labelmate.model.User;
@@ -42,6 +45,7 @@ public class AiSuggestionService {
     private final ProjectRepository projects;
     private final UserRepository users;
     private final LabelSuggestionService suggestionService;
+    private final AnnotationService annotationService;
 
     public AiSuggestionService(
             AiSuggestionRepository suggestions,
@@ -49,13 +53,15 @@ public class AiSuggestionService {
             LabelRepository labels,
             ProjectRepository projects,
             UserRepository users,
-            LabelSuggestionService suggestionService) {
+            LabelSuggestionService suggestionService,
+            AnnotationService annotationService) {
         this.suggestions = suggestions;
         this.tasks = tasks;
         this.labels = labels;
         this.projects = projects;
         this.users = users;
         this.suggestionService = suggestionService;
+        this.annotationService = annotationService;
     }
 
     /**
@@ -92,5 +98,49 @@ public class AiSuggestionService {
         // raw_response stays null: only the parsed label/confidence are kept,
         // never an invented transcript of provider output.
         return SuggestionResponse.from(suggestions.save(suggestion));
+    }
+
+    /**
+     * Labels a task with the AI and persists the result as an {@code AI}
+     * annotation. The label scheme and instructions come from the project
+     * itself (never client input); the caller is recorded as the requesting
+     * annotator and must own the task's project or be assigned to it. An
+     * explicit confidence override (0–100) may accompany the request;
+     * otherwise the model's parsed confidence is stored, or null when the
+     * model gave none. Review still decides: auto-labels enter the queue as
+     * {@code SUBMITTED}, never as final.
+     */
+    @Transactional
+    public AnnotationResponse autoLabel(Long taskId, AutoLabelRequest request, String userEmail) {
+        User user = users.findByEmail(userEmail)
+                .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "Unauthorized"));
+        Task task = tasks.findById(taskId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Task not found"));
+        if (task.getProject() == null
+                || task.getProject().getOwner() == null
+                || (!Objects.equals(task.getProject().getOwner().getId(), user.getId())
+                        && (task.getAssignedTo() == null
+                                || !Objects.equals(task.getAssignedTo().getId(), user.getId())))) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Task not found");
+        }
+        if (task.getItemData() == null || task.getItemData().isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Task has no text to label");
+        }
+        List<String> scheme = labels.findByProjectIdOrderByNameAsc(task.getProject().getId()).stream()
+                .map(Label::getName)
+                .toList();
+        if (scheme.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Project has no labels");
+        }
+        SuggestionResult result;
+        try {
+            result = suggestionService.suggest(
+                    task.getItemData(), scheme, task.getProject().getInstructions());
+        } catch (IllegalArgumentException ex) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ex.getMessage());
+        }
+        java.math.BigDecimal confidence =
+                request != null && request.confidence() != null ? request.confidence() : result.confidence();
+        return annotationService.createAi(taskId, result.suggestedLabel(), confidence, userEmail);
     }
 }

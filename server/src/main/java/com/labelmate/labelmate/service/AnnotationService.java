@@ -27,9 +27,13 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Application logic for the Annotation domain.
  *
- * <p>Every operation is scoped by project ownership: the task's project must
- * belong to the calling user, so one user cannot annotate another user's
- * project even by guessing a task id. The human-entered label string is
+ * <p>Every operation is scoped by project ownership or explicit task
+ * assignment: the task's project must belong to the calling user, or the
+ * task must be assigned to them by the project owner — so one user cannot
+ * annotate another user's project even by guessing a task id, while an
+ * assigned annotator can work their own queue without owning the project.
+ * Admins may read any project for review; annotation writes stay
+ * owner-or-assignee only. The human-entered label string is
  * stored in {@code content}; when a {@link Label} with the same name already
  * exists in the project it is linked as well.
  *
@@ -63,13 +67,15 @@ public class AnnotationService {
     }
 
     /**
-     * Creates a human annotation for a task owned by the calling user.
-     * Moves the task to {@code SUBMITTED} so the review queue can pick it up.
+     * Creates a human annotation for a task owned by the calling user or
+     * assigned to them. Moves the task to {@code SUBMITTED} so the review
+     * queue can pick it up, and records {@code IN_PROGRESS} implicitly: any
+     * non-terminal writable state becomes submitted on first save.
      */
     @Transactional
     public AnnotationResponse create(AnnotationRequest request, String userEmail) {
         User user = loadUser(userEmail);
-        Task task = loadOwnedTask(request.taskId(), user);
+        Task task = loadWritableTask(request.taskId(), user);
         if (task.getStatus() == TaskStatus.APPROVED) {
             throw new ApiException(HttpStatus.CONFLICT, "Task is already approved");
         }
@@ -87,9 +93,41 @@ public class AnnotationService {
     }
 
     /**
+     * Persists one AI-produced annotation for a task owned by the calling
+     * user or assigned to them. The label must already be vetted (it comes
+     * from the suggestion pipeline, never raw provider text) and the caller
+     * is recorded as the requesting annotator — AI never acts on its own.
+     * Like human annotation it moves the task to {@code SUBMITTED}; unlike
+     * human approval it never becomes final without review.
+     */
+    @Transactional
+    public AnnotationResponse createAi(Long taskId, String label, java.math.BigDecimal confidence, String userEmail) {
+        User user = loadUser(userEmail);
+        Task task = loadWritableTask(taskId, user);
+        if (task.getStatus() == TaskStatus.APPROVED) {
+            throw new ApiException(HttpStatus.CONFLICT, "Task is already approved");
+        }
+        if (label == null || label.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "AI produced no usable label");
+        }
+        String labelValue = label.strip();
+
+        Annotation annotation = new Annotation(task, user, AnnotationSource.AI, LocalDateTime.now());
+        annotation.setContent(labelValue);
+        annotation.setConfidence(confidence);
+        labels.findByProjectIdAndName(task.getProject().getId(), labelValue)
+                .ifPresent(annotation::setLabel);
+
+        Annotation saved = annotations.save(annotation);
+        moveTaskToSubmitted(task);
+        return AnnotationResponse.from(saved);
+    }
+
+    /**
      * Returns a single annotation when its project belongs to the calling
-     * user. Admins may read any project so they can review it; annotation
-     * writes stay owner-only.
+     * user, is assigned to them, or they are an admin. Admins may read any
+     * project so they can review it; annotation writes stay owner-or-assignee
+     * only.
      */
     @Transactional(readOnly = true)
     public AnnotationResponse getByIdForUser(Long id, String userEmail) {
@@ -98,7 +136,7 @@ public class AnnotationService {
 
     /**
      * Lists annotations for one task, newest first, when the task's project
-     * belongs to the calling user.
+     * belongs to the calling user, is assigned to them, or they are an admin.
      */
     @Transactional(readOnly = true)
     public List<AnnotationResponse> listByTask(Long taskId, String userEmail) {
@@ -110,9 +148,10 @@ public class AnnotationService {
     }
 
     /**
-     * Lists every annotation in a project owned by the calling user, newest
-     * first. A foreign or missing project id yields 404 so project ids
-     * cannot be probed.
+     * Lists every annotation in a project owned by the calling user (or
+     * visible to an admin or to an annotator assigned to at least one of its
+     * tasks), newest first. A foreign or missing project id yields 404 so
+     * project ids cannot be probed.
      */
     @Transactional(readOnly = true)
     public List<AnnotationResponse> listByProject(Long projectId, String userEmail) {
@@ -126,9 +165,10 @@ public class AnnotationService {
     }
 
     /**
-     * Updates the label of an annotation whose project belongs to the calling
-     * user. Approved tasks are immutable: relabeling an approved annotation
-     * would silently invalidate the human review, so it yields 409.
+     * Updates the label of an annotation on a task owned by the calling user
+     * or assigned to them. Approved tasks are immutable: relabeling an
+     * approved annotation would silently invalidate the human review, so it
+     * yields 409.
      */
     @Transactional
     public AnnotationResponse update(Long id, AnnotationUpdateRequest request, String userEmail) {
@@ -146,9 +186,9 @@ public class AnnotationService {
     }
 
     /**
-     * Deletes an annotation whose project belongs to the calling user.
-     * Reviewed annotations are kept: the review row references them, so
-     * deleting one yields 409 instead of breaking referential integrity.
+     * Deletes an annotation on a task owned by the calling user or assigned
+     * to them. Reviewed annotations are kept: the review row references them,
+     * so deleting one yields 409 instead of breaking referential integrity.
      * When the task has no annotations left it returns to
      * {@code IN_PROGRESS} so the workspace shows it as work to do rather
      * than as submitted.
@@ -172,7 +212,12 @@ public class AnnotationService {
         if (user.getRole() == Role.ADMIN) {
             return projects.findById(projectId).isPresent();
         }
-        return ownsProject(projectId, user);
+        if (ownsProject(projectId, user)) {
+            return true;
+        }
+        return tasks.findByAssignedToIdOrderByIdAsc(user.getId()).stream()
+                .anyMatch(task -> task.getProject() != null
+                        && Objects.equals(task.getProject().getId(), projectId));
     }
 
     private boolean ownsProject(Long projectId, User user) {
@@ -180,10 +225,28 @@ public class AnnotationService {
     }
 
     private boolean isVisible(Task task, User user) {
+        if (user.getRole() == Role.ADMIN) {
+            return true;
+        }
         return task.getProject() != null
                 && task.getProject().getOwner() != null
                 && (Objects.equals(task.getProject().getOwner().getId(), user.getId())
-                        || user.getRole() == Role.ADMIN);
+                        || isAssignee(task, user));
+    }
+
+    private boolean isAssignee(Task task, User user) {
+        return task.getAssignedTo() != null
+                && Objects.equals(task.getAssignedTo().getId(), user.getId());
+    }
+
+    private boolean isWritable(Task task, User user) {
+        if (user.getRole() == Role.ADMIN) {
+            return false;
+        }
+        return task.getProject() != null
+                && task.getProject().getOwner() != null
+                && (Objects.equals(task.getProject().getOwner().getId(), user.getId())
+                        || isAssignee(task, user));
     }
 
     private void moveTaskToSubmitted(Task task) {
@@ -203,11 +266,13 @@ public class AnnotationService {
     }
 
     private Task loadOwnedTask(Long taskId, User user) {
+        return loadWritableTask(taskId, user);
+    }
+
+    private Task loadWritableTask(Long taskId, User user) {
         Task task = tasks.findById(taskId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Task not found"));
-        if (task.getProject() == null
-                || task.getProject().getOwner() == null
-                || !Objects.equals(task.getProject().getOwner().getId(), user.getId())) {
+        if (!isWritable(task, user)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "Task not found");
         }
         return task;
@@ -235,10 +300,7 @@ public class AnnotationService {
         Annotation annotation = annotations.findById(id)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Annotation not found"));
         Task task = annotation.getTask();
-        if (task == null
-                || task.getProject() == null
-                || task.getProject().getOwner() == null
-                || !Objects.equals(task.getProject().getOwner().getId(), user.getId())) {
+        if (task == null || !isWritable(task, user)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "Annotation not found");
         }
         return annotation;

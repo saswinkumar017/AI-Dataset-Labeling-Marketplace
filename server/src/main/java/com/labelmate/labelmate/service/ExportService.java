@@ -1,5 +1,6 @@
 package com.labelmate.labelmate.service;
 
+import com.labelmate.labelmate.dto.DatasetItemResponse;
 import com.labelmate.labelmate.dto.ExportRow;
 import com.labelmate.labelmate.exception.ApiException;
 import com.labelmate.labelmate.model.Annotation;
@@ -59,9 +60,11 @@ public class ExportService {
     @Transactional(readOnly = true)
     public List<ExportRow> exportProject(Long projectId, String userEmail) {
         Project project = loadVisibleProject(projectId, userEmail);
+        List<String> columns = DatasetItemResponse.parseColumns(
+                project.getDataset() != null ? project.getDataset().getColumnsJson() : null);
         List<ExportRow> rows = new ArrayList<>();
         for (Task task : tasks.findByProjectIdOrderByItemIndexAscIdAsc(project.getId())) {
-            latestApproved(task).ifPresent(approved -> rows.add(approved));
+            latestApproved(task, columns).ifPresent(approved -> rows.add(approved));
         }
         return rows;
     }
@@ -82,13 +85,15 @@ public class ExportService {
         return csv.toString();
     }
 
-    private Optional<ExportRow> latestApproved(Task task) {
+    private Optional<ExportRow> latestApproved(Task task, List<String> columns) {
         for (Annotation annotation : annotations.findByTaskIdOrderByCreatedAtDesc(task.getId())) {
             if (annotation.getSource() == AnnotationSource.HUMAN_APPROVED) {
                 Review review = reviews.findByAnnotationIdOrderByReviewedAtDesc(annotation.getId()).stream()
                         .findFirst()
                         .orElse(null);
-                return Optional.of(ExportRow.from(annotation, review));
+                DatasetItemResponse item =
+                        task.getDatasetItem() != null ? DatasetItemResponse.from(task.getDatasetItem()) : null;
+                return Optional.of(ExportRow.from(annotation, review, item, columns));
             }
         }
         return Optional.empty();

@@ -30,9 +30,10 @@ import org.springframework.transaction.annotation.Transactional;
  * the task back for re-annotation. AI is not involved at any point.
  *
  * <p>Visibility and decision rights are separate gates, both enforced
- * server-side: reading requires the caller to be the project owner or an
- * {@code ADMIN} (anything else yields 404), while recording a decision
- * additionally requires the caller to differ from the annotation's
+ * server-side: reading requires the caller to be the project owner, the
+ * assigned annotator, or an {@code ADMIN} (anything else yields 404), while
+ * recording a decision additionally requires the caller to be the project
+ * owner or an {@code ADMIN} and to differ from the annotation's
  * original annotator (self-review yields 403).
  */
 @Service
@@ -60,12 +61,16 @@ public class ReviewService {
     /**
      * Records the caller's review decision for one annotation.
      * Each annotation accepts a single current review; a second decision for
-     * the same annotation yields 409.
+     * the same annotation yields 409. Only the project owner or an admin may
+     * decide, and never on their own annotation (403).
      */
     @Transactional
     public ReviewResponse submit(Long annotationId, ReviewRequest request, String reviewerEmail) {
         User reviewer = loadUser(reviewerEmail);
         Annotation annotation = loadVisibleAnnotation(annotationId, reviewer);
+        if (!canDecide(annotation, reviewer)) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Annotation not found");
+        }
         if (annotation.getAnnotator() != null
                 && Objects.equals(annotation.getAnnotator().getId(), reviewer.getId())) {
             throw new ApiException(HttpStatus.FORBIDDEN, "Reviewer must differ from the annotator");
@@ -96,8 +101,9 @@ public class ReviewService {
     }
 
     /**
-     * Lists every review in a project owned by the calling user (or visible
-     * to an admin), newest first.
+     * Lists every review in a project visible to the calling user (owner,
+     * admin, or an annotator assigned to at least one of its tasks), newest
+     * first.
      */
     @Transactional(readOnly = true)
     public List<ReviewResponse> listByProject(Long projectId, String userEmail) {
@@ -149,16 +155,33 @@ public class ReviewService {
         }
         boolean owner = Objects.equals(task.getProject().getOwner().getId(), user.getId());
         boolean admin = user.getRole() == Role.ADMIN;
-        if (!owner && !admin) {
+        boolean assignee = task.getAssignedTo() != null
+                && Objects.equals(task.getAssignedTo().getId(), user.getId());
+        if (!owner && !admin && !assignee) {
             throw new ApiException(HttpStatus.NOT_FOUND, "Annotation not found");
         }
         return annotation;
+    }
+
+    private boolean canDecide(Annotation annotation, User reviewer) {
+        Task task = annotation.getTask();
+        if (task == null || task.getProject() == null || task.getProject().getOwner() == null) {
+            return false;
+        }
+        boolean owner = Objects.equals(task.getProject().getOwner().getId(), reviewer.getId());
+        boolean admin = reviewer.getRole() == Role.ADMIN;
+        return owner || admin;
     }
 
     private boolean canSeeProject(Long projectId, User user) {
         if (user.getRole() == Role.ADMIN) {
             return projects.findById(projectId).isPresent();
         }
-        return projects.findByIdAndOwnerId(projectId, user.getId()).isPresent();
+        if (projects.findByIdAndOwnerId(projectId, user.getId()).isPresent()) {
+            return true;
+        }
+        return tasks.findByAssignedToIdOrderByIdAsc(user.getId()).stream()
+                .anyMatch(task -> task.getProject() != null
+                        && Objects.equals(task.getProject().getId(), projectId));
     }
 }

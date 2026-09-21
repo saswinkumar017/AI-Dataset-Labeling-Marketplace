@@ -53,11 +53,11 @@ public class ProjectController {
         return ResponseEntity.ok(projectService.listMine(authentication.getName()));
     }
 
-    /** Returns one of the authenticated user's projects. */
+    /** Returns one project visible to the caller (owner, assignee, admin). */
     @GetMapping("/{id}")
     @Operation(summary = "Get a project by id")
     public ResponseEntity<ProjectResponse> get(@PathVariable Long id, Authentication authentication) {
-        return ResponseEntity.ok(projectService.getByIdForOwner(id, authentication.getName()));
+        return ResponseEntity.ok(projectService.getVisible(id, authentication.getName()));
     }
 
     /** Updates one of the authenticated user's projects. */
