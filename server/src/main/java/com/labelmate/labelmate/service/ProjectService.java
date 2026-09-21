@@ -4,14 +4,19 @@ import com.labelmate.labelmate.dto.ProjectRequest;
 import com.labelmate.labelmate.dto.ProjectResponse;
 import com.labelmate.labelmate.exception.ApiException;
 import com.labelmate.labelmate.model.Dataset;
+import com.labelmate.labelmate.model.Label;
 import com.labelmate.labelmate.model.Project;
 import com.labelmate.labelmate.model.ProjectStatus;
 import com.labelmate.labelmate.model.User;
 import com.labelmate.labelmate.repository.DatasetRepository;
+import com.labelmate.labelmate.repository.LabelRepository;
 import com.labelmate.labelmate.repository.ProjectRepository;
 import com.labelmate.labelmate.repository.UserRepository;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -31,12 +36,17 @@ public class ProjectService {
 
     private final ProjectRepository projects;
     private final DatasetRepository datasets;
+    private final LabelRepository labels;
     private final UserRepository users;
 
     public ProjectService(
-            ProjectRepository projects, DatasetRepository datasets, UserRepository users) {
+            ProjectRepository projects,
+            DatasetRepository datasets,
+            LabelRepository labels,
+            UserRepository users) {
         this.projects = projects;
         this.datasets = datasets;
+        this.labels = labels;
         this.users = users;
     }
 
@@ -54,7 +64,8 @@ public class ProjectService {
                 dataset, owner, request.name().trim(), ProjectStatus.DRAFT, LocalDateTime.now());
         project.setInstructions(request.instructions());
         project.setLabelType(request.labelType());
-        return ProjectResponse.from(projects.save(project));
+        Project saved = projects.save(project);
+        return ProjectResponse.from(saved, syncLabels(saved, request.labels()));
     }
 
     /**
@@ -66,7 +77,7 @@ public class ProjectService {
     public List<ProjectResponse> listMine(String ownerEmail) {
         User owner = loadOwner(ownerEmail);
         return projects.findByOwnerIdOrderByCreatedAtDesc(owner.getId()).stream()
-                .map(ProjectResponse::from)
+                .map(project -> ProjectResponse.from(project, labelNames(project.getId())))
                 .toList();
     }
 
@@ -75,7 +86,8 @@ public class ProjectService {
      * A foreign or missing id yields 404 so project ids cannot be probed.
      */
     public ProjectResponse getByIdForOwner(Long id, String ownerEmail) {
-        return ProjectResponse.from(loadOwned(id, ownerEmail));
+        Project project = loadOwned(id, ownerEmail);
+        return ProjectResponse.from(project, labelNames(project.getId()));
     }
 
     /**
@@ -91,7 +103,8 @@ public class ProjectService {
         project.setInstructions(request.instructions());
         project.setLabelType(request.labelType());
         project.setUpdatedAt(LocalDateTime.now());
-        return ProjectResponse.from(projects.save(project));
+        Project saved = projects.save(project);
+        return ProjectResponse.from(saved, syncLabels(saved, request.labels()));
     }
 
     /**
@@ -99,6 +112,39 @@ public class ProjectService {
      */
     public void delete(Long id, String ownerEmail) {
         projects.delete(loadOwned(id, ownerEmail));
+    }
+
+    /**
+     * Adds label options that do not exist yet and returns the full scheme.
+     * Labels are never deleted here: annotations may already reference them.
+     */
+    private List<String> syncLabels(Project project, List<String> requested) {
+        if (requested != null) {
+            Set<String> seen = new HashSet<>();
+            for (Label existing :
+                    labels.findByProjectIdOrderByNameAsc(project.getId())) {
+                seen.add(existing.getName().toLowerCase());
+            }
+            List<Label> fresh = new ArrayList<>();
+            for (String raw : requested) {
+                if (raw == null) {
+                    continue;
+                }
+                String name = raw.trim();
+                if (name.isEmpty() || !seen.add(name.toLowerCase())) {
+                    continue;
+                }
+                fresh.add(new Label(project, name, LocalDateTime.now()));
+            }
+            labels.saveAll(fresh);
+        }
+        return labelNames(project.getId());
+    }
+
+    private List<String> labelNames(Long projectId) {
+        return labels.findByProjectIdOrderByNameAsc(projectId).stream()
+                .map(Label::getName)
+                .toList();
     }
 
     private User loadOwner(String ownerEmail) {

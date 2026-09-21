@@ -69,6 +69,7 @@ export type ProjectResponse = {
   name: string;
   instructions: string | null;
   labelType: string | null;
+  labels: string[];
   status: "DRAFT" | "IN_PROGRESS" | "COMPLETED";
   createdAt: string;
   updatedAt: string | null;
@@ -79,6 +80,7 @@ export type ProjectPayload = {
   name: string;
   instructions?: string | null;
   labelType?: string | null;
+  labels?: string[] | null;
 };
 
 export async function registerRequest(username: string, email: string, password: string) {

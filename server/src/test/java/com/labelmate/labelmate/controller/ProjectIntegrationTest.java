@@ -127,6 +127,52 @@ class ProjectIntegrationTest {
     }
 
     @Test
+    void shouldCreateProjectWithLabelScheme() throws Exception {
+        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        long datasetId = datasetIdFor(token, "Reviews");
+
+        MvcResult created = mockMvc.perform(post("/api/projects")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"datasetId\":" + datasetId + ",\"name\":\"Sentiment v1\","
+                                + "\"labels\":[\"Positive\",\"Negative\",\"Neutral\"]}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.labels.length()").value(3))
+                .andExpect(jsonPath("$.labels[0]").value("Negative"))
+                .andReturn();
+        long projectId = objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asLong();
+
+        // The scheme persists and is visible on reads.
+        mockMvc.perform(get("/api/projects/" + projectId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.labels.length()").value(3));
+
+        // Extending the scheme keeps existing labels and adds the new one.
+        mockMvc.perform(put("/api/projects/" + projectId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"datasetId\":" + datasetId + ",\"name\":\"Sentiment v1\","
+                                + "\"labels\":[\"Positive\",\"Mixed\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.labels.length()").value(4));
+    }
+
+    @Test
+    void shouldRejectInvalidLabels() throws Exception {
+        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        long datasetId = datasetIdFor(token, "Reviews");
+
+        mockMvc.perform(post("/api/projects")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"datasetId\":" + datasetId + ",\"name\":\"Bad\","
+                                + "\"labels\":[\"ok\",\"\"]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").exists());
+    }
+
+    @Test
     void shouldRejectProjectCreationWhenUnauthenticated() throws Exception {
         mockMvc.perform(post("/api/projects")
                         .contentType(MediaType.APPLICATION_JSON)

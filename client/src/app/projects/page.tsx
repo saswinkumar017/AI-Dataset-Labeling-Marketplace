@@ -12,9 +12,21 @@ type FormState = {
   name: string;
   instructions: string;
   labelType: string;
+  labels: string;
 };
 
-const emptyForm: FormState = { datasetId: "", name: "", instructions: "", labelType: "" };
+const emptyForm: FormState = { datasetId: "", name: "", instructions: "", labelType: "", labels: "" };
+
+function parseLabels(raw: string): string[] {
+  return Array.from(
+    new Set(
+      raw
+        .split(",")
+        .map((part) => part.trim())
+        .filter((part) => part.length > 0)
+    )
+  ).slice(0, 50);
+}
 
 function statusTone(status: ProjectResponse["status"]): "zinc" | "emerald" | "blue" {
   if (status === "COMPLETED") return "emerald";
@@ -94,11 +106,13 @@ export default function ProjectsPage() {
   }, []);
 
   function toPayload(formState: FormState) {
+    const labels = parseLabels(formState.labels);
     return {
       datasetId: Number(formState.datasetId),
       name: formState.name.trim(),
       instructions: formState.instructions.trim() || null,
       labelType: formState.labelType.trim() || null,
+      labels: labels.length > 0 ? labels : null,
     };
   }
 
@@ -114,6 +128,14 @@ export default function ProjectsPage() {
     }
     if (formState.labelType.trim().length > 50) {
       return "Label type must be at most 50 characters.";
+    }
+    const labels = parseLabels(formState.labels);
+    if (labels.length > 50) {
+      return "At most 50 labels are allowed.";
+    }
+    const tooLong = labels.find((label) => label.length > 100);
+    if (tooLong) {
+      return `Label "${tooLong.slice(0, 30)}" is too long — at most 100 characters each.`;
     }
     return null;
   }
@@ -226,6 +248,11 @@ export default function ProjectsPage() {
               <label className="text-xs font-medium text-zinc-700">Label type</label>
               <input value={form.labelType} onChange={(e) => setForm({ ...form, labelType: e.target.value })} placeholder="CLASSIFICATION" className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-900" maxLength={50} />
             </div>
+            <div>
+              <label className="text-xs font-medium text-zinc-700">Labels (optional)</label>
+              <input value={form.labels} onChange={(e) => setForm({ ...form, labels: e.target.value })} placeholder="Positive, Negative, Neutral" className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-900" />
+              <p className="mt-1 text-xs text-zinc-400">Comma-separated options annotators can pick from.</p>
+            </div>
             <button type="submit" disabled={submitting || datasets.length === 0} className={`rounded-full px-5 py-2 text-sm font-medium text-white ${submitting || datasets.length === 0 ? "bg-zinc-400" : "bg-zinc-900 hover:bg-zinc-800"}`}>
               {submitting ? "Creating…" : "Create project"}
             </button>
@@ -259,6 +286,13 @@ export default function ProjectsPage() {
                       <div>labelType: {p.labelType}</div>
                     </div>
                   )}
+                  {p.labels && p.labels.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {p.labels.map((label) => (
+                        <span key={label} className="rounded-full bg-blue-50 px-2.5 py-1 text-xs text-blue-700 ring-1 ring-blue-200">{label}</span>
+                      ))}
+                    </div>
+                  )}
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Link href={`/annotate?projectId=${p.id}`} className="rounded-full bg-zinc-900 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-800">
                       Annotate
@@ -272,7 +306,7 @@ export default function ProjectsPage() {
                     <button
                       onClick={() => {
                         setEditingId(p.id);
-                        setEditForm({ datasetId: String(p.datasetId), name: p.name, instructions: p.instructions ?? "", labelType: p.labelType ?? "" });
+                        setEditForm({ datasetId: String(p.datasetId), name: p.name, instructions: p.instructions ?? "", labelType: p.labelType ?? "", labels: (p.labels ?? []).join(", ") });
                       }}
                       className="rounded-full border border-zinc-200 px-3 py-1 text-xs hover:bg-zinc-50"
                     >
@@ -305,6 +339,7 @@ export default function ProjectsPage() {
                       <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" placeholder="Name" maxLength={150} />
                       <textarea value={editForm.instructions} onChange={(e) => setEditForm({ ...editForm, instructions: e.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" placeholder="Instructions" rows={2} maxLength={2000} />
                       <input value={editForm.labelType} onChange={(e) => setEditForm({ ...editForm, labelType: e.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" placeholder="Label type" maxLength={50} />
+                      <input value={editForm.labels} onChange={(e) => setEditForm({ ...editForm, labels: e.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" placeholder="Labels, comma-separated (adds new ones)" />
                       <div className="flex gap-2">
                         <button onClick={() => onUpdate(p.id, p.datasetId)} className="rounded-full bg-zinc-900 px-4 py-1.5 text-xs font-medium text-white hover:bg-zinc-800">Save</button>
                         <button onClick={() => setEditingId(null)} className="rounded-full border border-zinc-200 px-4 py-1.5 text-xs hover:bg-zinc-50">Cancel</button>

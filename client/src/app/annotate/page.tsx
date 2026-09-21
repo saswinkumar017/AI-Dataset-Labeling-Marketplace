@@ -82,11 +82,6 @@ export default function AnnotatePage() {
       setSuggestion(null);
       setSuggestError(null);
       setNotice(null);
-      try {
-        setCandidates(window.localStorage.getItem(`labelmate_labels_${projectId}`) ?? "");
-      } catch {
-        setCandidates("");
-      }
     } catch (err) {
       setError(friendlyTaskError(err));
       setTasks([]);
@@ -110,6 +105,7 @@ export default function AnnotatePage() {
         const initial =
           Number.isInteger(wanted) && data.some((p) => p.id === wanted) ? wanted : data[0].id;
         setActiveId(initial);
+        applyCandidates(initial, data.find((p) => p.id === initial)?.labels ?? []);
         void loadQueue(initial);
       })
       .catch((err) => {
@@ -142,11 +138,22 @@ export default function AnnotatePage() {
     };
   }, [current]);
 
+  function applyCandidates(projectId: number, scheme: string[]) {
+    let stored = "";
+    try {
+      stored = window.localStorage.getItem(`labelmate_labels_${projectId}`) ?? "";
+    } catch {
+      stored = "";
+    }
+    setCandidates(stored || scheme.join(", "));
+  }
+
   function chooseProject(id: number) {
     if (id === activeId) return;
     setActiveId(id);
     setLabel("");
     setNotice(null);
+    applyCandidates(id, projects.find((p) => p.id === id)?.labels ?? []);
     void loadQueue(id);
   }
 

@@ -17,6 +17,7 @@ import com.labelmate.labelmate.model.ProjectStatus;
 import com.labelmate.labelmate.model.Role;
 import com.labelmate.labelmate.model.User;
 import com.labelmate.labelmate.repository.DatasetRepository;
+import com.labelmate.labelmate.repository.LabelRepository;
 import com.labelmate.labelmate.repository.ProjectRepository;
 import com.labelmate.labelmate.repository.UserRepository;
 import java.time.LocalDateTime;
@@ -38,6 +39,9 @@ class ProjectServiceTest {
 
     @Mock
     private DatasetRepository datasets;
+
+    @Mock
+    private LabelRepository labels;
 
     @Mock
     private UserRepository users;
@@ -253,4 +257,54 @@ class ProjectServiceTest {
         verify(projects, never()).delete(any(Project.class));
     }
 
+    @Test
+    void shouldCreateLabelSchemeWhenProvided() throws Exception {
+        User owner = owner();
+        Dataset dataset = dataset(owner);
+        Project project = new Project(dataset, owner, "Sentiment", ProjectStatus.DRAFT, LocalDateTime.now());
+        com.labelmate.labelmate.model.Label positive =
+                new com.labelmate.labelmate.model.Label(project, "Positive", LocalDateTime.now());
+        com.labelmate.labelmate.model.Label negative =
+                new com.labelmate.labelmate.model.Label(project, "Negative", LocalDateTime.now());
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(datasets.findByIdAndOwnerId(7L, owner.getId())).thenReturn(Optional.of(dataset));
+        when(projects.save(any(Project.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(labels.findByProjectIdOrderByNameAsc(any())).thenReturn(List.of(), List.of(negative, positive));
+        ProjectResponse response = projectService.create(
+                new ProjectRequest(7L, "Sentiment", null, null, List.of("Positive", "Negative", "Positive", "  ")),
+                "owner@example.com");
+
+        assertEquals(List.of("Negative", "Positive"), response.labels());
+        org.mockito.ArgumentCaptor<java.util.List<com.labelmate.labelmate.model.Label>> saved =
+                org.mockito.ArgumentCaptor.forClass(java.util.List.class);
+        verify(labels).saveAll(saved.capture());
+        assertEquals(2, saved.getValue().size());
+    }
+
+    @Test
+    void shouldAddMissingLabelsOnUpdate() throws Exception {
+        User owner = owner();
+        Dataset dataset = dataset(owner);
+        Project project = new Project(dataset, owner, "Old", ProjectStatus.DRAFT, LocalDateTime.now());
+        com.labelmate.labelmate.model.Label existing =
+                new com.labelmate.labelmate.model.Label(project, "Positive", LocalDateTime.now());
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(projects.findByIdAndOwnerId(1L, owner.getId())).thenReturn(Optional.of(project));
+        when(projects.save(any(Project.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        com.labelmate.labelmate.model.Label neutral =
+                new com.labelmate.labelmate.model.Label(project, "Neutral", LocalDateTime.now());
+        when(labels.findByProjectIdOrderByNameAsc(any()))
+                .thenReturn(List.of(existing), List.of(existing, neutral));
+
+        ProjectResponse response = projectService.update(
+                1L, new ProjectRequest(7L, "New", null, null, List.of("Positive", "Neutral")),
+                "owner@example.com");
+
+        assertEquals(List.of("Positive", "Neutral"), response.labels());
+        org.mockito.ArgumentCaptor<java.util.List<com.labelmate.labelmate.model.Label>> updated =
+                org.mockito.ArgumentCaptor.forClass(java.util.List.class);
+        verify(labels).saveAll(updated.capture());
+        assertEquals(1, updated.getValue().size());
+        assertEquals("Neutral", updated.getValue().get(0).getName());
+    }
 }
