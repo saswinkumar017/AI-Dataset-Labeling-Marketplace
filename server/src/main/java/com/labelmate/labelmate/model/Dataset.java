@@ -47,6 +47,15 @@ public class Dataset {
     @Column(name = "checksum_sha256", length = 64)
     private String checksumSha256;
 
+    /**
+     * Ordered column names for tabular (multi-column) datasets, stored as a
+     * JSON array string, e.g. {@code ["review","rating"]}. Null/blank means a
+     * single-content dataset where each item is free text (or an image) in
+     * {@code DatasetItem.content}.
+     */
+    @Column(name = "columns_json", columnDefinition = "TEXT")
+    private String columnsJson;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -129,6 +138,14 @@ public class Dataset {
 
     public void setChecksumSha256(String checksumSha256) {
         this.checksumSha256 = checksumSha256;
+    }
+
+    public String getColumnsJson() {
+        return columnsJson;
+    }
+
+    public void setColumnsJson(String columnsJson) {
+        this.columnsJson = columnsJson;
     }
 
     public LocalDateTime getCreatedAt() {

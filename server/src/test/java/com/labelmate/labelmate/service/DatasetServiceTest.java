@@ -14,6 +14,7 @@ import com.labelmate.labelmate.model.Dataset;
 import com.labelmate.labelmate.model.DatasetStatus;
 import com.labelmate.labelmate.model.Role;
 import com.labelmate.labelmate.model.User;
+import com.labelmate.labelmate.repository.DatasetItemRepository;
 import com.labelmate.labelmate.repository.DatasetRepository;
 import com.labelmate.labelmate.repository.UserRepository;
 import java.time.LocalDateTime;
@@ -35,6 +36,18 @@ class DatasetServiceTest {
 
     @Mock
     private UserRepository users;
+
+    @Mock
+    private DatasetItemRepository datasetItems;
+
+    @Mock
+    private DatasetItemService itemService;
+
+    @Mock
+    private CsvTableParser csvParser;
+
+    @Mock
+    private FileStorageService fileStorage;
 
     @InjectMocks
     private DatasetService datasetService;

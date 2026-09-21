@@ -86,6 +86,15 @@
             <version>3.1.1</version>
         </dependency>
 
+        <!-- CSV parsing for tabular dataset uploads: quote-aware, multiline-safe.
+             Hand-rolled splitting corrupts quoted commas, so the standard library
+             is the clearest option a student can still read and explain. -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-csv</artifactId>
+            <version>1.11.0</version>
+        </dependency>
+
         <!-- JWT (jjwt) for stateless authentication -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>

@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.labelmate.labelmate.repository.AiSuggestionRepository;
 import com.labelmate.labelmate.repository.AnnotationRepository;
+import com.labelmate.labelmate.repository.DatasetItemRepository;
 import com.labelmate.labelmate.repository.DatasetRepository;
 import com.labelmate.labelmate.repository.LabelRepository;
 import com.labelmate.labelmate.repository.ProjectRepository;
@@ -36,6 +37,9 @@ class AiSuggestionIntegrationTest {
 
     @Autowired
     private UserRepository users;
+
+    @Autowired
+    private DatasetItemRepository datasetItems;
 
     @Autowired
     private DatasetRepository datasets;
@@ -71,6 +75,7 @@ class AiSuggestionIntegrationTest {
         taskRepository.deleteAll();
         labels.deleteAll();
         projects.deleteAll();
+        datasetItems.deleteAll();
         datasets.deleteAll();
         users.deleteAll();
         Mockito.reset(aiClient);
