@@ -113,7 +113,7 @@ class AnnotationWorkflowIntegrationTest {
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"datasetId\":" + datasetId + ",\"name\":\"Sentiment v1\","
-                                + "\"instructions\":\"Pick the sentiment.\",\"labelType\":\"CLASSIFICATION\"}"))
+                                + "\"instructions\":\"Pick the sentiment.\",\"labelType\":\"CLASSIFICATION\",\"labels\":[\"Positive\",\"Negative\"]}"))
                 .andExpect(status().isCreated())
                 .andReturn();
         long projectId = objectMapper.readTree(project.getResponse().getContentAsString()).get("id").asLong();
@@ -190,7 +190,7 @@ class AnnotationWorkflowIntegrationTest {
         MvcResult project = mockMvc.perform(post("/api/projects")
                         .header("Authorization", "Bearer " + mine)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"datasetId\":" + datasetId + ",\"name\":\"Mine Project\"}"))
+                        .content("{\"datasetId\":" + datasetId + ",\"name\":\"Mine Project\",\"labels\":[\"Positive\",\"Negative\"]}"))
                 .andExpect(status().isCreated())
                 .andReturn();
         long projectId = objectMapper.readTree(project.getResponse().getContentAsString()).get("id").asLong();

@@ -98,7 +98,7 @@ class ProjectIntegrationTest {
         MvcResult created = mockMvc.perform(post("/api/projects")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"datasetId\":" + datasetId + ",\"name\":\"" + name + "\"}"))
+                        .content("{\"datasetId\":" + datasetId + ",\"name\":\"" + name + "\",\"labels\":[\"Positive\",\"Negative\"]}"))
                 .andExpect(status().isCreated())
                 .andReturn();
         return objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asLong();
@@ -115,7 +115,7 @@ class ProjectIntegrationTest {
                         .content("{\"datasetId\":" + datasetId
                                 + ",\"name\":\"Image Classification v1\","
                                 + "\"instructions\":\"Label cats and dogs.\","
-                                + "\"labelType\":\"CLASSIFICATION\"}"))
+                                + "\"labelType\":\"CLASSIFICATION\",\"labels\":[\"Positive\",\"Negative\"]}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.name").value("Image Classification v1"))
                 .andExpect(jsonPath("$.datasetId").value(datasetId))
@@ -168,6 +168,29 @@ class ProjectIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"datasetId\":" + datasetId + ",\"name\":\"Bad\","
                                 + "\"labels\":[\"ok\",\"\"]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").exists());
+    }
+
+    @Test
+    void shouldRejectCreationWithoutLabels() throws Exception {
+        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        long datasetId = datasetIdFor(token, "Reviews");
+
+        // No scheme at all.
+        mockMvc.perform(post("/api/projects")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"datasetId\":" + datasetId + ",\"name\":\"No scheme\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").exists());
+
+        // An empty scheme is not a finite positive number of labels either.
+        mockMvc.perform(post("/api/projects")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"datasetId\":" + datasetId + ",\"name\":\"No scheme\","
+                                + "\"labels\":[]}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").exists());
     }

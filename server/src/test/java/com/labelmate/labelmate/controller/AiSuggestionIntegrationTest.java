@@ -102,7 +102,7 @@ class AiSuggestionIntegrationTest {
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"datasetId\":" + datasetId + ",\"name\":\"Sentiment v1\","
-                                + "\"instructions\":\"Pick sentiment.\"}"))
+                                + "\"instructions\":\"Pick sentiment.\",\"labels\":[\"Positive\",\"Negative\"]}"))
                 .andExpect(status().isCreated())
                 .andReturn();
         long projectId = objectMapper.readTree(project.getResponse().getContentAsString()).get("id").asLong();

@@ -19,7 +19,7 @@ public record ProjectRequest(
         @Size(max = 50, message = "labelType must be at most 50 characters")
         String labelType,
 
-        @Size(max = 50, message = "at most 50 labels are allowed")
+        @Size(min = 1, max = 50, message = "provide between 1 and 50 labels")
         List<@Size(min = 1, max = 100, message = "each label must be between 1 and 100 characters") String> labels) {
 
     /** Compatibility for callers without a label scheme. */

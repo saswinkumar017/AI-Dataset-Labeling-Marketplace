@@ -19,6 +19,7 @@ import com.labelmate.labelmate.model.User;
 import com.labelmate.labelmate.repository.DatasetRepository;
 import com.labelmate.labelmate.repository.LabelRepository;
 import com.labelmate.labelmate.repository.ProjectRepository;
+import com.labelmate.labelmate.repository.TaskRepository;
 import com.labelmate.labelmate.repository.UserRepository;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -44,6 +45,9 @@ class ProjectServiceTest {
     private LabelRepository labels;
 
     @Mock
+    private TaskRepository tasks;
+
+    @Mock
     private UserRepository users;
 
     @InjectMocks
@@ -66,7 +70,12 @@ class ProjectServiceTest {
         when(projects.save(any(Project.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         ProjectResponse response = projectService.create(
-                new ProjectRequest(7L, "Image Classification v1", "Label cats and dogs", "CLASSIFICATION"),
+                new ProjectRequest(
+                        7L,
+                        "Image Classification v1",
+                        "Label cats and dogs",
+                        "CLASSIFICATION",
+                        List.of("Cat", "Dog")),
                 "owner@example.com");
 
         assertEquals("Image Classification v1", response.name());
@@ -241,7 +250,8 @@ class ProjectServiceTest {
         when(projects.save(any(Project.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         ProjectResponse response = projectService.create(
-                new ProjectRequest(7L, "  Spaced Name  ", null, null), "owner@example.com");
+                new ProjectRequest(7L, "  Spaced Name  ", null, null, List.of("Cat")),
+                "owner@example.com");
 
         assertEquals("Spaced Name", response.name());
     }
@@ -306,5 +316,63 @@ class ProjectServiceTest {
         verify(labels).saveAll(updated.capture());
         assertEquals(1, updated.getValue().size());
         assertEquals("Neutral", updated.getValue().get(0).getName());
+    }
+
+    @Test
+    void shouldRejectCreationWithoutLabels() {
+        User owner = owner();
+        Dataset dataset = dataset(owner);
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(datasets.findByIdAndOwnerId(7L, owner.getId())).thenReturn(Optional.of(dataset));
+
+        ApiException missing = assertThrows(
+                ApiException.class,
+                () -> projectService.create(
+                        new ProjectRequest(7L, "No scheme", null, null), "owner@example.com"));
+        ApiException blank = assertThrows(
+                ApiException.class,
+                () -> projectService.create(
+                        new ProjectRequest(7L, "No scheme", null, null, List.of("   ")),
+                        "owner@example.com"));
+
+        assertEquals(HttpStatus.BAD_REQUEST, missing.getStatus());
+        assertEquals(HttpStatus.BAD_REQUEST, blank.getStatus());
+        verify(projects, never()).save(any(Project.class));
+    }
+
+    @Test
+    void shouldDeleteLabelsWithProjectWhenNoTasksExist() throws Exception {
+        User owner = owner();
+        Dataset dataset = dataset(owner);
+        Project project = new Project(dataset, owner, "Mine", ProjectStatus.DRAFT, LocalDateTime.now());
+        com.labelmate.labelmate.model.Label existing =
+                new com.labelmate.labelmate.model.Label(project, "Positive", LocalDateTime.now());
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(projects.findByIdAndOwnerId(1L, owner.getId())).thenReturn(Optional.of(project));
+        when(tasks.findByProjectIdOrderByItemIndexAscIdAsc(any())).thenReturn(List.of());
+        when(labels.findByProjectIdOrderByNameAsc(any())).thenReturn(List.of(existing));
+
+        projectService.delete(1L, "owner@example.com");
+
+        verify(labels).deleteAll(List.of(existing));
+        verify(projects).delete(project);
+    }
+
+    @Test
+    void shouldRefuseDeleteWhenTasksExist() throws Exception {
+        User owner = owner();
+        Dataset dataset = dataset(owner);
+        Project project = new Project(dataset, owner, "Mine", ProjectStatus.DRAFT, LocalDateTime.now());
+        com.labelmate.labelmate.model.Task task = new com.labelmate.labelmate.model.Task(
+                project, dataset, com.labelmate.labelmate.model.TaskStatus.PENDING, LocalDateTime.now());
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(projects.findByIdAndOwnerId(1L, owner.getId())).thenReturn(Optional.of(project));
+        when(tasks.findByProjectIdOrderByItemIndexAscIdAsc(any())).thenReturn(List.of(task));
+
+        ApiException ex = assertThrows(
+                ApiException.class, () -> projectService.delete(1L, "owner@example.com"));
+
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+        verify(projects, never()).delete(any(Project.class));
     }
 }

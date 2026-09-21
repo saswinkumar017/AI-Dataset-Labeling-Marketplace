@@ -98,7 +98,7 @@ class ExportIntegrationTest {
         MvcResult project = mockMvc.perform(post("/api/projects")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"datasetId\":" + datasetId + ",\"name\":\"Sentiment v1\"}"))
+                        .content("{\"datasetId\":" + datasetId + ",\"name\":\"Sentiment v1\",\"labels\":[\"Positive\",\"Negative\"]}"))
                 .andExpect(status().isCreated())
                 .andReturn();
         long projectId = objectMapper.readTree(project.getResponse().getContentAsString()).get("id").asLong();

@@ -104,7 +104,7 @@ class AnnotationIntegrationTest {
         MvcResult created = mockMvc.perform(post("/api/projects")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"datasetId\":" + datasetId + ",\"name\":\"" + name + "\"}"))
+                        .content("{\"datasetId\":" + datasetId + ",\"name\":\"" + name + "\",\"labels\":[\"Positive\",\"Negative\"]}"))
                 .andExpect(status().isCreated())
                 .andReturn();
         return objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asLong();

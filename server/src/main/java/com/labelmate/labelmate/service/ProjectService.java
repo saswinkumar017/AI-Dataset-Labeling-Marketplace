@@ -11,6 +11,7 @@ import com.labelmate.labelmate.model.User;
 import com.labelmate.labelmate.repository.DatasetRepository;
 import com.labelmate.labelmate.repository.LabelRepository;
 import com.labelmate.labelmate.repository.ProjectRepository;
+import com.labelmate.labelmate.repository.TaskRepository;
 import com.labelmate.labelmate.repository.UserRepository;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -19,6 +20,7 @@ import java.util.List;
 import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Application logic for annotation projects.
@@ -37,16 +39,19 @@ public class ProjectService {
     private final ProjectRepository projects;
     private final DatasetRepository datasets;
     private final LabelRepository labels;
+    private final TaskRepository tasks;
     private final UserRepository users;
 
     public ProjectService(
             ProjectRepository projects,
             DatasetRepository datasets,
             LabelRepository labels,
+            TaskRepository tasks,
             UserRepository users) {
         this.projects = projects;
         this.datasets = datasets;
         this.labels = labels;
+        this.tasks = tasks;
         this.users = users;
     }
 
@@ -55,11 +60,17 @@ public class ProjectService {
      *
      * <p>The dataset link is fixed at creation because the database design
      * forbids changing it afterwards; this keeps project ownership and
-     * dataset ownership consistent by construction.
+     * dataset ownership consistent by construction. A finite, non-empty
+     * label scheme is required: annotation without possible labels is not
+     * a labeling project.
      */
+    @Transactional
     public ProjectResponse create(ProjectRequest request, String ownerEmail) {
         User owner = loadOwner(ownerEmail);
         Dataset dataset = loadOwnedDataset(request.datasetId(), owner);
+        if (usableLabels(request.labels()).isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "at least one label is required");
+        }
         Project project = new Project(
                 dataset, owner, request.name().trim(), ProjectStatus.DRAFT, LocalDateTime.now());
         project.setInstructions(request.instructions());
@@ -91,12 +102,15 @@ public class ProjectService {
     }
 
     /**
-     * Updates name, instructions, and label type only when the project
-     * belongs to the calling user. The dataset link and status stay
+     * Updates name, instructions, label type, and label scheme only when the
+     * project belongs to the calling user. A null scheme leaves the existing
+     * labels untouched; provided labels only ever add options, never delete
+     * ones annotations may reference. The dataset link and status stay
      * untouched: the dataset is immutable after creation and status
      * transitions belong to the future task workflow, not to a generic
      * update.
      */
+    @Transactional
     public ProjectResponse update(Long id, ProjectRequest request, String ownerEmail) {
         Project project = loadOwned(id, ownerEmail);
         project.setName(request.name().trim());
@@ -109,9 +123,19 @@ public class ProjectService {
 
     /**
      * Deletes a project only when it belongs to the calling user.
+     *
+     * <p>Label options are owned configuration and go down with the project.
+     * A project with annotation tasks is refused with 409 instead: tasks
+     * (and their annotations) are worked data, never silently cascadeable.
      */
+    @Transactional
     public void delete(Long id, String ownerEmail) {
-        projects.delete(loadOwned(id, ownerEmail));
+        Project project = loadOwned(id, ownerEmail);
+        if (!tasks.findByProjectIdOrderByItemIndexAscIdAsc(project.getId()).isEmpty()) {
+            throw new ApiException(HttpStatus.CONFLICT, "project has annotation tasks and cannot be deleted");
+        }
+        labels.deleteAll(labels.findByProjectIdOrderByNameAsc(project.getId()));
+        projects.delete(project);
     }
 
     /**
@@ -126,12 +150,8 @@ public class ProjectService {
                 seen.add(existing.getName().toLowerCase());
             }
             List<Label> fresh = new ArrayList<>();
-            for (String raw : requested) {
-                if (raw == null) {
-                    continue;
-                }
-                String name = raw.trim();
-                if (name.isEmpty() || !seen.add(name.toLowerCase())) {
+            for (String name : usableLabels(requested)) {
+                if (!seen.add(name.toLowerCase())) {
                     continue;
                 }
                 fresh.add(new Label(project, name, LocalDateTime.now()));
@@ -139,6 +159,23 @@ public class ProjectService {
             labels.saveAll(fresh);
         }
         return labelNames(project.getId());
+    }
+
+    private List<String> usableLabels(List<String> requested) {
+        if (requested == null) {
+            return List.of();
+        }
+        List<String> usable = new ArrayList<>();
+        for (String raw : requested) {
+            if (raw == null) {
+                continue;
+            }
+            String name = raw.trim();
+            if (!name.isEmpty() && !usable.contains(name)) {
+                usable.add(name);
+            }
+        }
+        return usable;
     }
 
     private List<String> labelNames(Long projectId) {

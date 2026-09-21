@@ -130,6 +130,9 @@ export default function ProjectsPage() {
       return "Label type must be at most 50 characters.";
     }
     const labels = parseLabels(formState.labels);
+    if (labels.length < 1) {
+      return "Add at least one label — an annotation project needs possible labels.";
+    }
     if (labels.length > 50) {
       return "At most 50 labels are allowed.";
     }
@@ -249,7 +252,7 @@ export default function ProjectsPage() {
               <input value={form.labelType} onChange={(e) => setForm({ ...form, labelType: e.target.value })} placeholder="CLASSIFICATION" className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-900" maxLength={50} />
             </div>
             <div>
-              <label className="text-xs font-medium text-zinc-700">Labels (optional)</label>
+              <label className="text-xs font-medium text-zinc-700">Labels *</label>
               <input value={form.labels} onChange={(e) => setForm({ ...form, labels: e.target.value })} placeholder="Positive, Negative, Neutral" className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-900" />
               <p className="mt-1 text-xs text-zinc-400">Comma-separated options annotators can pick from.</p>
             </div>
