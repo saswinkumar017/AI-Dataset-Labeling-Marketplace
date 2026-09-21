@@ -28,24 +28,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // State updates live in promise callbacks (not in the effect body) so the
+    // session restore complies with react-hooks/set-state-in-effect.
+    let cancelled = false;
     const token = localStorage.getItem("labelmate_token");
     const cached = readStoredUser();
     if (!token) {
-      setLoading(false);
-      return;
+      Promise.resolve().then(() => {
+        if (!cancelled) setLoading(false);
+      });
+      return () => {
+        cancelled = true;
+      };
     }
-    if (cached) setUser(cached);
+    if (cached) {
+      Promise.resolve(cached).then((stored) => {
+        if (!cancelled) setUser(stored);
+      });
+    }
     meRequest()
       .then((me) => {
+        if (cancelled) return;
         setUser(me);
         localStorage.setItem("labelmate_user", JSON.stringify(me));
       })
       .catch(() => {
+        if (cancelled) return;
         localStorage.removeItem("labelmate_token");
         localStorage.removeItem("labelmate_user");
         setUser(null);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {

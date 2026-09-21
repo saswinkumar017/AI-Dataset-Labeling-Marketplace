@@ -5,7 +5,7 @@ import AppShell from "@/components/AppShell";
 import Card from "@/components/Card";
 import RequireAuth from "@/components/RequireAuth";
 import { useAuth } from "@/lib/auth-context";
-import { dashboardSummary, listProjects, type DashboardSummary, type ProjectResponse } from "@/lib/api";
+import { dashboardSummary, listAssignedTasks, listProjects, type DashboardSummary, type ProjectResponse, type TaskResponse } from "@/lib/api";
 
 function Stat({ label, value }: { label: string; value: number }) {
   return (
@@ -20,6 +20,7 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [projects, setProjects] = useState<ProjectResponse[]>([]);
+  const [assigned, setAssigned] = useState<TaskResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,11 +28,16 @@ export default function DashboardPage() {
     // State updates live in promise callbacks (not in the effect body) so the
     // initial fetch complies with react-hooks/set-state-in-effect.
     let cancelled = false;
-    Promise.all([dashboardSummary(), listProjects().catch(() => [] as ProjectResponse[])])
-      .then(([data, owned]) => {
+    Promise.all([
+      dashboardSummary(),
+      listProjects().catch(() => [] as ProjectResponse[]),
+      listAssignedTasks().catch(() => [] as TaskResponse[]),
+    ])
+      .then(([data, owned, mine]) => {
         if (cancelled) return;
         setSummary(data);
         setProjects(owned.slice(0, 5));
+        setAssigned(mine);
         setLoading(false);
       })
       .catch(() => {
@@ -70,7 +76,37 @@ export default function DashboardPage() {
               <Stat label="Approved final labels" value={summary.reviewsApproved} />
               <Stat label="Rejected, needs rework" value={summary.tasksRejected} />
               <Stat label="Finished items" value={summary.tasksApproved} />
+              <Stat label="Assigned to me" value={summary.assignedToMe} />
+              <Stat label="My action needed" value={summary.assignedNeedsAction} />
             </div>
+
+            {assigned.length > 0 && (
+              <Card className="mt-6">
+                <div className="text-sm font-semibold text-zinc-900">My assigned tasks</div>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Work assigned to you by project owners — open a task to label it.
+                </p>
+                <ul className="mt-3 space-y-2">
+                  {assigned.slice(0, 8).map((t) => (
+                    <li key={t.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-zinc-100 px-3 py-2 text-sm">
+                      <span className="font-medium text-zinc-900">
+                        {t.projectName ?? `Project #${t.projectId}`} · Task #{t.id}
+                        <span className="ml-2 text-xs font-normal text-zinc-500">{t.status}</span>
+                      </span>
+                      <Link href={`/annotate?taskId=${t.id}`} className="rounded-full bg-zinc-900 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-800">
+                        Open task
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+                {assigned.length > 8 && (
+                  <div className="mt-2 text-xs text-zinc-500">+ {assigned.length - 8} more — open the workspace to see all.</div>
+                )}
+                <div className="mt-3 text-xs">
+                  <Link href="/annotate?assigned=1" className="text-zinc-600 underline hover:text-zinc-900">Open all assigned in workspace</Link>
+                </div>
+              </Card>
+            )}
 
             {summary.projectCount === 0 ? (
               <Card className="mt-6">

@@ -6,6 +6,8 @@ import Badge from "@/components/Badge";
 import Card from "@/components/Card";
 import RequireAuth from "@/components/RequireAuth";
 import {
+  apiBaseUrl,
+  autoLabelTask,
   createAnnotation,
   createTask,
   createTasksBulk,
@@ -14,11 +16,17 @@ import {
   friendlyAnnotationError,
   friendlyProjectError,
   friendlyTaskError,
+  generateProjectTasks,
+  getProject,
+  getTask,
+  listAssignedTasks,
   listProjectAnnotations,
   listProjectReviews,
   listProjectTasks,
   listProjects,
   listTaskAnnotations,
+  startTask,
+  submitTask,
   suggestLabel,
   updateAnnotation,
   type AnnotationResponse,
@@ -59,12 +67,23 @@ export default function AnnotatePage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [queueMode, setQueueMode] = useState<"project" | "assigned" | "single">("project");
+  const [assignedTasks, setAssignedTasks] = useState<TaskResponse[]>([]);
+  const [loadingAssigned, setLoadingAssigned] = useState(false);
+  const [taskActionBusy, setTaskActionBusy] = useState(false);
+  const [autoLabeling, setAutoLabeling] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const active = projects.find((p) => p.id === activeId) ?? null;
-  const current = index < tasks.length ? tasks[index] : null;
-  const doneCount = tasks.filter((t) => t.status === "SUBMITTED" || t.status === "APPROVED").length;
+  const queue = queueMode === "project" ? tasks : assignedTasks;
+  const setQueue = queueMode === "project" ? setTasks : setAssignedTasks;
+  const current = index < queue.length ? queue[index] : null;
+  const doneCount = queue.filter((t) => t.status === "SUBMITTED" || t.status === "APPROVED").length;
+  const revisionNotes = current
+    ? projectReviews.filter((r) => submitted.some((a) => a.id === r.annotationId) && r.decision === "REJECTED")
+    : [];
 
   const loadQueue = useCallback(async (projectId: number) => {
     setLoadingTasks(true);
@@ -95,6 +114,83 @@ export default function AnnotatePage() {
     }
   }, []);
 
+  const loadAssignedQueue = useCallback(async () => {
+    setLoadingAssigned(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const mine = await listAssignedTasks();
+      setAssignedTasks(mine);
+      setIndex(0);
+      setSubmitted([]);
+      setLabel("");
+      setSuggestion(null);
+      setSuggestError(null);
+      if (mine.length > 0) {
+        // Reviews carry the revision feedback; assignees can read reviews on
+        // projects they are assigned to.
+        try {
+          const reviews = await listProjectReviews(mine[0].projectId);
+          setProjectReviews(reviews);
+        } catch {
+          setProjectReviews([]);
+        }
+        try {
+          const project = await getProject(mine[0].projectId).catch(() => null);
+          if (project) {
+            setProjects((prev) => (prev.some((p) => p.id === project.id) ? prev : [...prev, project]));
+            setActiveId(project.id);
+            applyCandidates(project.id, project.labels ?? []);
+          }
+        } catch {
+          // Labels still work via free text when the project is unreachable.
+        }
+      }
+      if (mine.length === 0) setNotice("No tasks are assigned to you right now.");
+    } catch (err) {
+      setError(friendlyTaskError(err));
+      setAssignedTasks([]);
+    } finally {
+      setLoadingAssigned(false);
+    }
+  }, []);
+
+  const loadSingleTask = useCallback(async (taskId: number) => {
+    setLoadingAssigned(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const task = await getTask(taskId);
+      setAssignedTasks([task]);
+      setIndex(0);
+      setSubmitted([]);
+      setLabel("");
+      setSuggestion(null);
+      setSuggestError(null);
+      try {
+        const reviews = await listProjectReviews(task.projectId).catch(() => [] as ReviewResponse[]);
+        setProjectReviews(reviews);
+      } catch {
+        setProjectReviews([]);
+      }
+      try {
+        const project = await getProject(task.projectId).catch(() => null);
+        if (project) {
+          setProjects((prev) => (prev.some((p) => p.id === project.id) ? prev : [...prev, project]));
+          setActiveId(project.id);
+          applyCandidates(project.id, project.labels ?? []);
+        }
+      } catch {
+        // Labels still work via free text when the project is unreachable.
+      }
+    } catch (err) {
+      setError(friendlyTaskError(err));
+      setAssignedTasks([]);
+    } finally {
+      setLoadingAssigned(false);
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     listProjects()
@@ -102,8 +198,19 @@ export default function AnnotatePage() {
         if (cancelled) return;
         setProjects(data);
         setLoadingProjects(false);
-        if (data.length === 0) return;
         const params = new URLSearchParams(window.location.search);
+        const singleTaskId = Number(params.get("taskId"));
+        if (Number.isInteger(singleTaskId) && singleTaskId > 0) {
+          setQueueMode("single");
+          void loadSingleTask(singleTaskId);
+          return;
+        }
+        if (params.get("assigned") === "1") {
+          setQueueMode("assigned");
+          void loadAssignedQueue();
+          return;
+        }
+        if (data.length === 0) return;
         const wanted = Number(params.get("projectId"));
         const initial =
           Number.isInteger(wanted) && data.some((p) => p.id === wanted) ? wanted : data[0].id;
@@ -119,7 +226,24 @@ export default function AnnotatePage() {
     return () => {
       cancelled = true;
     };
-  }, [loadQueue]);
+  }, [loadQueue, loadAssignedQueue, loadSingleTask]);
+
+  useEffect(() => {
+    // Number-key shortcuts (1-9) pick the matching project label into the
+    // label box. Ignored while typing in an input or when the item is locked.
+    function onKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+      if (!current || current.status === "APPROVED") return;
+      const scheme = active?.labels ?? [];
+      const digit = Number(e.key);
+      if (Number.isInteger(digit) && digit >= 1 && digit <= 9 && digit <= scheme.length) {
+        setLabel(scheme[digit - 1]);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [current, active]);
 
   useEffect(() => {
     // State updates live in promise callbacks (not in the effect body) so the
@@ -152,12 +276,69 @@ export default function AnnotatePage() {
   }
 
   function chooseProject(id: number) {
-    if (id === activeId) return;
+    if (id === activeId && queueMode === "project") return;
+    setQueueMode("project");
     setActiveId(id);
     setLabel("");
     setNotice(null);
     applyCandidates(id, projects.find((p) => p.id === id)?.labels ?? []);
     void loadQueue(id);
+  }
+
+  function showAssigned() {
+    setQueueMode("assigned");
+    setIndex(0);
+    setSubmitted([]);
+    setLabel("");
+    setNotice(null);
+    void loadAssignedQueue();
+  }
+
+  async function onStartTask() {
+    if (!current || taskActionBusy) return;
+    setTaskActionBusy(true);
+    setError(null);
+    try {
+      const updated = await startTask(current.id);
+      setQueue((prev) => prev.map((t) => (t.id === current.id ? updated : t)));
+      setNotice(`Task #${current.id} is now in progress.`);
+    } catch (err) {
+      setError(friendlyTaskError(err));
+    } finally {
+      setTaskActionBusy(false);
+    }
+  }
+
+  async function onSubmitTask() {
+    if (!current || taskActionBusy) return;
+    setTaskActionBusy(true);
+    setError(null);
+    try {
+      const updated = await submitTask(current.id);
+      setQueue((prev) => prev.map((t) => (t.id === current.id ? updated : t)));
+      setNotice(`Task #${current.id} submitted for review.`);
+    } catch (err) {
+      setError(friendlyTaskError(err));
+    } finally {
+      setTaskActionBusy(false);
+    }
+  }
+
+  async function onAutoLabel() {
+    if (!current || autoLabeling || current.status === "APPROVED") return;
+    setAutoLabeling(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const saved = await autoLabelTask(current.id);
+      setSubmitted((prev) => [saved, ...prev]);
+      setQueue((prev) => prev.map((t) => (t.id === current.id ? { ...t, status: "SUBMITTED" as TaskStatus } : t)));
+      setNotice(`AI labeled “${saved.label}” — review it below, then approve in the review queue or correct it here.`);
+    } catch (err) {
+      setError(friendlyAiError(err));
+    } finally {
+      setAutoLabeling(false);
+    }
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -174,13 +355,33 @@ export default function AnnotatePage() {
     try {
       const saved = await createAnnotation({ taskId: current.id, label: value });
       setSubmitted((prev) => [saved, ...prev]);
-      setTasks((prev) => prev.map((t) => (t.id === current.id ? { ...t, status: "SUBMITTED" as TaskStatus } : t)));
+      setQueue((prev) => prev.map((t) => (t.id === current.id ? { ...t, status: "SUBMITTED" as TaskStatus } : t)));
       setLabel("");
       setNotice(`Saved “${saved.label}” for item ${index + 1}. It is now waiting for review.`);
     } catch (err) {
       setError(friendlyAnnotationError(err));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function onGenerateQueue() {
+    if (!active || generating) return;
+    setGenerating(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const created = await generateProjectTasks(active.id);
+      if (created.length === 0) {
+        setNotice("Dataset has no new items — ingest data first, then generate again.");
+      } else {
+        setNotice(`${created.length} task${created.length === 1 ? "" : "s"} generated from dataset items.`);
+      }
+      await loadQueue(active.id);
+    } catch (err) {
+      setError(friendlyTaskError(err));
+    } finally {
+      setGenerating(false);
     }
   }
 
@@ -237,7 +438,7 @@ export default function AnnotatePage() {
       const remaining = submitted.filter((a) => a.id !== id);
       setSubmitted(remaining);
       if (remaining.length === 0) {
-        setTasks((prev) =>
+        setQueue((prev) =>
           prev.map((t) => (t.id === current.id ? { ...t, status: "IN_PROGRESS" as TaskStatus } : t))
         );
       }
@@ -387,7 +588,8 @@ export default function AnnotatePage() {
   }
 
   function go(delta: number) {
-    setIndex((i) => Math.min(Math.max(i + delta, 0), Math.max(tasks.length - 1, 0)));
+    const len = (queueMode === "project" ? tasks : assignedTasks).length;
+    setIndex((i) => Math.min(Math.max(i + delta, 0), Math.max(len - 1, 0)));
     setLabel("");
     setSubmitted([]);
     setEditingId(null);
@@ -407,20 +609,39 @@ export default function AnnotatePage() {
 
         {loadingProjects ? (
           <div className="text-sm text-zinc-500">Loading your projects…</div>
-        ) : projects.length === 0 ? (
+        ) : projects.length === 0 && queueMode === "project" ? (
           <Card>
             <div className="text-sm font-medium text-zinc-900">No projects yet</div>
             <p className="mt-1 text-sm text-zinc-500">
-              Create an annotation project first, then come back here to label its items.
+              Create an annotation project first, then come back here to label its items — or check tasks assigned to you.
             </p>
-            <Link href="/projects" className="mt-3 inline-block rounded-full bg-zinc-900 px-4 py-2 text-xs font-medium text-white hover:bg-zinc-800">
-              Go to Projects
-            </Link>
+            <div className="mt-3 flex gap-2">
+              <Link href="/projects" className="inline-block rounded-full bg-zinc-900 px-4 py-2 text-xs font-medium text-white hover:bg-zinc-800">
+                Go to Projects
+              </Link>
+              <button
+                type="button"
+                onClick={showAssigned}
+                className="inline-block rounded-full border border-zinc-200 px-4 py-2 text-xs hover:bg-zinc-50"
+              >
+                View assigned tasks
+              </button>
+            </div>
           </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-[220px_1fr]">
             <Card className="h-fit">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Projects</h2>
+              <button
+                type="button"
+                onClick={showAssigned}
+                className={`w-full rounded-lg px-3 py-2 text-left text-sm ${
+                  queueMode !== "project" ? "bg-zinc-900 text-white" : "text-zinc-700 hover:bg-zinc-100"
+                }`}
+              >
+                <span className="block truncate font-medium">Assigned to me</span>
+                <span className={`block text-xs ${queueMode !== "project" ? "text-zinc-300" : "text-zinc-400"}`}>Tasks from other owners</span>
+              </button>
+              <h2 className="mt-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">Projects</h2>
               <div className="mt-2 space-y-1">
                 {projects.map((p) => (
                   <button
@@ -428,11 +649,11 @@ export default function AnnotatePage() {
                     type="button"
                     onClick={() => chooseProject(p.id)}
                     className={`w-full rounded-lg px-3 py-2 text-left text-sm ${
-                      p.id === activeId ? "bg-zinc-900 text-white" : "text-zinc-700 hover:bg-zinc-100"
+                      p.id === activeId && queueMode === "project" ? "bg-zinc-900 text-white" : "text-zinc-700 hover:bg-zinc-100"
                     }`}
                   >
                     <span className="block truncate font-medium">{p.name}</span>
-                    <span className={`block text-xs ${p.id === activeId ? "text-zinc-300" : "text-zinc-400"}`}>#{p.id}</span>
+                    <span className={`block text-xs ${p.id === activeId && queueMode === "project" ? "text-zinc-300" : "text-zinc-400"}`}>#{p.id}</span>
                   </button>
                 ))}
               </div>
@@ -456,14 +677,28 @@ export default function AnnotatePage() {
                 </div>
               )}
 
-              {loadingTasks ? (
+              {loadingTasks || loadingAssigned ? (
                 <div className="text-sm text-zinc-500">Loading the annotation queue…</div>
-              ) : tasks.length === 0 ? (
+              ) : queue.length === 0 ? (
                 <Card>
-                  <div className="text-sm font-medium text-zinc-900">Queue is empty</div>
+                  <div className="text-sm font-medium text-zinc-900">
+                    {queueMode === "project" ? "Queue is empty" : "No assigned tasks"}
+                  </div>
                   <p className="mt-1 text-sm text-zinc-500">
-                    This project has no items yet. Add the first item below to start labeling.
+                    {queueMode === "project"
+                      ? "This project has no tasks yet. If its dataset already has items, generate the queue — or add the first item below to start labeling."
+                      : "No tasks are assigned to you right now. Ask a project owner to assign you a task."}
                   </p>
+                  {queueMode === "project" && active && (
+                  <>
+                  <button
+                    type="button"
+                    onClick={onGenerateQueue}
+                    disabled={generating}
+                    className={`mt-3 rounded-full px-4 py-2 text-xs font-medium text-white ${generating ? "bg-zinc-400" : "bg-zinc-900 hover:bg-zinc-800"}`}
+                  >
+                    {generating ? "Generating…" : "Generate tasks from dataset"}
+                  </button>
                   <form onSubmit={onAddItem} className="mt-3 flex gap-2">
                     <input
                       value={newItem}
@@ -480,20 +715,69 @@ export default function AnnotatePage() {
                       {addingItem ? "Adding…" : "Add item"}
                     </button>
                   </form>
+                  </>
+                  )}
                 </Card>
               ) : current ? (
                 <>
                   <div className="mb-3 flex items-center justify-between text-xs text-zinc-500">
                     <span>
-                      Item {index + 1} of {tasks.length} · {doneCount} submitted
+                      Item {index + 1} of {queue.length} · {doneCount} submitted
+                      {current.assignedToEmail && <span> · assigned to {current.assignedToEmail}</span>}
                     </span>
                     <Badge tone={taskTone(current.status)}>{current.status}</Badge>
                   </div>
+                  {current.status === "REJECTED" && (
+                    <div role="alert" className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 ring-1 ring-amber-200">
+                      Reviewer requested changes
+                      {revisionNotes.length > 0
+                        ? `: “${revisionNotes[0].comment ?? "please check the label and resubmit"}” — correct the label below and submit again.`
+                        : " — correct the label below and submit again."}
+                    </div>
+                  )}
                   <Card>
                     <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Item to label</div>
-                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-900">
-                      {current.itemData || "(empty item — no text was stored for this task)"}
-                    </p>
+                    {current.item?.imageUrl && (
+                      <img
+                        src={`${apiBaseUrl()}${current.item.imageUrl}`}
+                        alt={current.item.content}
+                        className="mt-2 max-h-80 rounded-lg ring-1 ring-zinc-200"
+                      />
+                    )}
+                    {current.item && Object.keys(current.item.rowData).length > 0 ? (
+                      <dl className="mt-2 space-y-1 text-sm leading-6 text-zinc-900">
+                        {Object.entries(current.item.rowData).map(([key, value]) => (
+                          <div key={key} className="flex gap-2">
+                            <dt className="shrink-0 font-medium text-zinc-500">{key}:</dt>
+                            <dd className="whitespace-pre-wrap">{value || "—"}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    ) : (
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-900">
+                        {current.item?.content || current.itemData || "(empty item — no text was stored for this task)"}
+                      </p>
+                    )}
+                    {active && active.labels.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {active.labels.slice(0, 9).map((option, i) => (
+                          <button
+                            key={option}
+                            type="button"
+                            onClick={() => setLabel(option)}
+                            disabled={current.status === "APPROVED"}
+                            title={`Shortcut: ${i + 1}`}
+                            className={`rounded-full border px-2.5 py-1 text-xs ${
+                              label === option
+                                ? "border-zinc-900 bg-zinc-900 text-white"
+                                : "border-zinc-200 text-zinc-700 hover:bg-zinc-50"
+                            } disabled:opacity-40`}
+                          >
+                            {i + 1} · {option}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     <form onSubmit={onSubmit} className="mt-4 flex gap-2">
                       <input
                         value={label}
@@ -516,7 +800,31 @@ export default function AnnotatePage() {
                     {current.status === "APPROVED" && (
                       <p className="mt-2 text-xs text-emerald-700">Approved by a reviewer — this item is locked.</p>
                     )}
-                    <div className="mt-3 flex gap-2">
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={onStartTask}
+                        disabled={taskActionBusy || current.status === "APPROVED" || current.status === "SUBMITTED"}
+                        className="rounded-full border border-zinc-200 px-4 py-1.5 text-xs hover:bg-zinc-50 disabled:opacity-40"
+                      >
+                        {taskActionBusy ? "Working…" : "Start task"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={onSubmitTask}
+                        disabled={taskActionBusy || current.status === "APPROVED" || current.status === "SUBMITTED"}
+                        className="rounded-full border border-zinc-200 px-4 py-1.5 text-xs hover:bg-zinc-50 disabled:opacity-40"
+                      >
+                        {taskActionBusy ? "Working…" : "Submit for review"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={onAutoLabel}
+                        disabled={autoLabeling || current.status === "APPROVED"}
+                        className="rounded-full border border-indigo-200 bg-indigo-50 px-4 py-1.5 text-xs text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
+                      >
+                        {autoLabeling ? "Labeling…" : "AI auto-label"}
+                      </button>
                       <button
                         type="button"
                         onClick={() => go(-1)}
@@ -528,7 +836,7 @@ export default function AnnotatePage() {
                       <button
                         type="button"
                         onClick={() => go(1)}
-                        disabled={index >= tasks.length - 1}
+                        disabled={index >= queue.length - 1}
                         className="rounded-full border border-zinc-200 px-4 py-1.5 text-xs hover:bg-zinc-50 disabled:opacity-40"
                       >
                         Next →
@@ -695,6 +1003,7 @@ export default function AnnotatePage() {
                     </Card>
                   )}
 
+                  {queueMode === "project" && (
                   <Card className="mt-4">
                     <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Add another item</div>
                     <form onSubmit={onAddItem} className="mt-2 flex gap-2">
@@ -714,7 +1023,9 @@ export default function AnnotatePage() {
                       </button>
                     </form>
                   </Card>
+                  )}
 
+                  {queueMode === "project" && (
                   <Card className="mt-4">
                     <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Bulk import items</div>
                     <p className="mt-1 text-xs text-zinc-500">
@@ -745,6 +1056,7 @@ export default function AnnotatePage() {
                       </div>
                     </form>
                   </Card>
+                  )}
                 </>
               ) : null}
             </div>

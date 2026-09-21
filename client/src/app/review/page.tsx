@@ -6,6 +6,7 @@ import Badge from "@/components/Badge";
 import Card from "@/components/Card";
 import RequireAuth from "@/components/RequireAuth";
 import {
+  apiBaseUrl,
   friendlyProjectError,
   friendlyReviewError,
   listProjectAnnotations,
@@ -23,6 +24,9 @@ import {
 type QueueItem = {
   annotation: AnnotationResponse;
   itemData: string | null;
+  taskStatus: string | null;
+  assignee: string | null;
+  imageUrl: string | null;
 };
 
 export default function ReviewPage() {
@@ -51,11 +55,20 @@ export default function ReviewPage() {
         listProjectTasks(projectId),
       ]);
       const reviewedIds = new Set(reviews.map((r) => r.annotationId));
-      const itemByTask = new Map<number, string | null>(tasks.map((t: TaskResponse) => [t.id, t.itemData]));
+      const taskById = new Map<number, TaskResponse>(tasks.map((t: TaskResponse) => [t.id, t]));
       setPending(
         annotations
           .filter((a) => !reviewedIds.has(a.id))
-          .map((a) => ({ annotation: a, itemData: itemByTask.get(a.taskId) ?? null }))
+          .map((a) => {
+            const t = a.taskId != null ? taskById.get(a.taskId) : undefined;
+            return {
+              annotation: a,
+              itemData: t?.item?.content ?? t?.itemData ?? null,
+              taskStatus: t?.status ?? null,
+              assignee: t?.assignedToEmail ?? null,
+              imageUrl: t?.item?.imageUrl ?? null,
+            };
+          })
       );
       setDecided(reviews);
     } catch (err) {
@@ -214,8 +227,15 @@ export default function ReviewPage() {
                       className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-900"
                     />
                   </Card>
-                  {pending.map(({ annotation: a, itemData }) => (
+                  {pending.map(({ annotation: a, itemData, taskStatus, assignee, imageUrl }) => (
                     <Card key={a.id}>
+                      {imageUrl && (
+                        <img
+                          src={`${apiBaseUrl()}${imageUrl}`}
+                          alt={itemData ?? "Dataset image"}
+                          className="mb-2 max-h-64 rounded-lg ring-1 ring-zinc-200"
+                        />
+                      )}
                       <div className="text-sm leading-6 text-zinc-900">
                         “{itemData || "(empty item — no text was stored for this task)"}”
                       </div>
@@ -225,6 +245,8 @@ export default function ReviewPage() {
                         </span>
                         <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-zinc-600 ring-1 ring-zinc-200">
                           Task #{a.taskId} · {a.source}
+                          {taskStatus ? ` · ${taskStatus}` : ""}
+                          {assignee ? ` · → ${assignee}` : ""}
                         </span>
                       </div>
                       <div className="mt-3 flex items-center gap-2">

@@ -1,10 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import Card from "@/components/Card";
 import Badge from "@/components/Badge";
 import RequireAuth from "@/components/RequireAuth";
-import { createDataset, deleteDataset, friendlyDatasetError, listDatasets, updateDataset, type DatasetResponse } from "@/lib/api";
+import { addDatasetItems, apiBaseUrl, createDataset, deleteDataset, friendlyDatasetError, getDatasetColumns, listDatasetItemsPaged, listDatasets, updateDataset, uploadDatasetFile, uploadDatasetImages, uploadTableCsv, type DatasetItemResponse, type DatasetResponse, type PagedResponse } from "@/lib/api";
 
 type FormState = {
   name: string;
@@ -28,6 +29,128 @@ export default function DatasetsPage() {
   const [editForm, setEditForm] = useState<FormState>(emptyForm);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [csvError, setCsvError] = useState<string | null>(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [ingestOpenId, setIngestOpenId] = useState<number | null>(null);
+  const [ingestText, setIngestText] = useState("");
+  const [ingestBusy, setIngestBusy] = useState(false);
+  const [ingestNotice, setIngestNotice] = useState<string | null>(null);
+  const [ingestColumns, setIngestColumns] = useState<string[]>([]);
+  const [itemsPage, setItemsPage] = useState(0);
+  const [itemsData, setItemsData] = useState<PagedResponse<DatasetItemResponse> | null>(null);
+  const [itemsLoading, setItemsLoading] = useState(false);
+
+  const ITEMS_PAGE_SIZE = 10;
+
+  async function openIngest(dataset: DatasetResponse) {
+    if (ingestOpenId === dataset.id) {
+      setIngestOpenId(null);
+      return;
+    }
+    setIngestOpenId(dataset.id);
+    setIngestText("");
+    setIngestNotice(null);
+    setItemsPage(0);
+    setItemsData(null);
+    setIngestColumns(dataset.columns ?? []);
+    setError(null);
+    setItemsLoading(true);
+    try {
+      const [page, cols] = await Promise.all([
+        listDatasetItemsPaged(dataset.id, 0, ITEMS_PAGE_SIZE),
+        getDatasetColumns(dataset.id).catch(() => ({ datasetId: dataset.id, columns: dataset.columns ?? [] })),
+      ]);
+      setItemsData(page);
+      setIngestColumns(cols.columns);
+    } catch (err) {
+      setError(friendlyDatasetError(err));
+    } finally {
+      setItemsLoading(false);
+    }
+  }
+
+  async function gotoItemsPage(datasetId: number, page: number) {
+    if (itemsLoading) return;
+    setItemsLoading(true);
+    try {
+      setItemsData(await listDatasetItemsPaged(datasetId, page, ITEMS_PAGE_SIZE));
+      setItemsPage(page);
+    } catch (err) {
+      setError(friendlyDatasetError(err));
+    } finally {
+      setItemsLoading(false);
+    }
+  }
+
+  async function refreshIngest(dataset: DatasetResponse) {
+    try {
+      const [page, cols, all] = await Promise.all([
+        listDatasetItemsPaged(dataset.id, itemsPage, ITEMS_PAGE_SIZE).catch(() => null),
+        getDatasetColumns(dataset.id).catch(() => null),
+        listDatasets().catch(() => null),
+      ]);
+      if (page) setItemsData(page);
+      if (cols) setIngestColumns(cols.columns);
+      if (all) {
+        setDatasets(all);
+        const updated = all.find((d) => d.id === dataset.id);
+        if (updated) setIngestColumns(updated.columns ?? cols?.columns ?? []);
+      }
+    } catch {
+      // Best-effort refresh; the explicit notices below carry the outcome.
+    }
+  }
+
+  async function onAddTextItems(dataset: DatasetResponse) {
+    const lines = ingestText.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+    if (lines.length === 0 || ingestBusy) return;
+    setIngestBusy(true);
+    setIngestNotice(null);
+    setError(null);
+    try {
+      const saved = await addDatasetItems(dataset.id, lines.slice(0, 5000));
+      setIngestText("");
+      setIngestNotice(`${saved.length} item${saved.length === 1 ? "" : "s"} added.`);
+      await refreshIngest(dataset);
+    } catch (err) {
+      setError(friendlyDatasetError(err));
+    } finally {
+      setIngestBusy(false);
+    }
+  }
+
+  async function onTableCsv(dataset: DatasetResponse, file: File | undefined) {
+    if (!file || ingestBusy) return;
+    setIngestBusy(true);
+    setIngestNotice(null);
+    setError(null);
+    try {
+      const result = await uploadTableCsv(dataset.id, file);
+      setIngestNotice(
+        `${result.inserted} row${result.inserted === 1 ? "" : "s"} added (${result.totalItems} total). Columns: ${result.columns.join(", ")}`
+      );
+      await refreshIngest(dataset);
+    } catch (err) {
+      setError(friendlyDatasetError(err));
+    } finally {
+      setIngestBusy(false);
+    }
+  }
+
+  async function onImages(dataset: DatasetResponse, files: File[]) {
+    if (files.length === 0 || ingestBusy) return;
+    setIngestBusy(true);
+    setIngestNotice(null);
+    setError(null);
+    try {
+      const saved = await uploadDatasetImages(dataset.id, files.slice(0, 20));
+      setIngestNotice(`${saved.length} image${saved.length === 1 ? "" : "s"} added.`);
+      await refreshIngest(dataset);
+    } catch (err) {
+      setError(friendlyDatasetError(err));
+    } finally {
+      setIngestBusy(false);
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -43,29 +166,74 @@ export default function DatasetsPage() {
   }
 
   useEffect(() => {
-    load();
+    // State updates live in promise callbacks (not in the effect body) so the
+    // initial fetch complies with react-hooks/set-state-in-effect.
+    let cancelled = false;
+    listDatasets()
+      .then((data) => {
+        if (cancelled) return;
+        setDatasets(data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(friendlyDatasetError(err));
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  function handleCsvFile(e: React.ChangeEvent<HTMLInputElement>, target: "create" | "edit") {
+  async function handleCsvFile(e: React.ChangeEvent<HTMLInputElement>, target: "create" | "edit") {
     const file = e.target.files?.[0];
     if (!file) return;
     setCsvError(null);
-    if (!file.name.toLowerCase().endsWith(".csv")) {
-      setCsvError("Please select a CSV file (.csv).");
+    const lower = file.name.toLowerCase();
+    if (!lower.endsWith(".csv") && !lower.endsWith(".txt")) {
+      setCsvError("Please select a .csv or .txt file.");
+      e.target.value = "";
       return;
     }
     if (file.size > 50 * 1024 * 1024) {
-      setCsvError("CSV too large — max 50 MB.");
+      setCsvError("File too large — max 50 MB.");
+      e.target.value = "";
       return;
     }
-    const fileName = file.name;
-    const filePath = `uploads/${fileName}`;
-    const fileSize = file.size.toString();
-    if (target === "create") {
-      setForm((prev) => ({ ...prev, fileName, filePath, fileSizeBytes: fileSize }));
-      setShowMeta(true);
-    } else {
-      setEditForm((prev) => ({ ...prev, fileName, filePath, fileSizeBytes: fileSize }));
+    // Store the bytes first: the server validates, saves the file under
+    // uploads/, and returns the metadata the dataset record persists. The
+    // form keeps working offline-style when the upload fails.
+    setUploadingFile(true);
+    try {
+      const stored = await uploadDatasetFile(file);
+      const patch = {
+        fileName: stored.fileName,
+        filePath: stored.filePath,
+        fileSizeBytes: stored.fileSizeBytes.toString(),
+        checksumSha256: stored.checksumSha256,
+      };
+      if (target === "create") {
+        setForm((prev) => ({ ...prev, ...patch }));
+        setShowMeta(true);
+      } else {
+        setEditForm((prev) => ({ ...prev, ...patch }));
+      }
+    } catch {
+      setCsvError("Upload failed — is the backend running? You can still enter file details manually.");
+      const fallback = {
+        fileName: file.name,
+        filePath: `uploads/${file.name}`,
+        fileSizeBytes: file.size.toString(),
+      };
+      if (target === "create") {
+        setForm((prev) => ({ ...prev, ...fallback }));
+        setShowMeta(true);
+      } else {
+        setEditForm((prev) => ({ ...prev, ...fallback }));
+      }
+    } finally {
+      setUploadingFile(false);
+      e.target.value = "";
     }
   }
 
@@ -148,9 +316,10 @@ export default function DatasetsPage() {
             </div>
 
             <div className="rounded-lg border border-dashed border-zinc-300 bg-zinc-50 p-3">
-              <label className="text-xs font-medium text-zinc-700">Upload CSV file (optional)</label>
-              <input type="file" accept=".csv" onChange={(e) => handleCsvFile(e, "create")} className="mt-1 block w-full text-sm text-zinc-600 file:mr-3 file:rounded-full file:border file:border-zinc-200 file:bg-white file:px-3 file:py-1 file:text-xs file:font-medium hover:file:bg-zinc-50" />
-              <div className="mt-1 text-xs text-zinc-500">CSV only · Max 50 MB · Selecting a file auto-fills fileName, filePath, and fileSizeBytes below.</div>
+              <label className="text-xs font-medium text-zinc-700">Upload dataset file (optional)</label>
+              <input type="file" accept=".csv,.txt" onChange={(e) => handleCsvFile(e, "create")} className="mt-1 block w-full text-sm text-zinc-600 file:mr-3 file:rounded-full file:border file:border-zinc-200 file:bg-white file:px-3 file:py-1 file:text-xs file:font-medium hover:file:bg-zinc-50" />
+              <div className="mt-1 text-xs text-zinc-500">CSV or TXT · Max 50 MB · The file is stored on the server; fileName, filePath, fileSizeBytes, and checksum fill in automatically.</div>
+              {uploadingFile && <div className="mt-1 text-xs text-zinc-500">Uploading file…</div>}
               {csvError && <div className="mt-2 text-xs text-red-600">{csvError}</div>}
             </div>
 
@@ -203,7 +372,7 @@ export default function DatasetsPage() {
                   <div className="flex items-start justify-between">
                     <div>
                       <div className="text-sm font-semibold text-zinc-900">{d.name}</div>
-                      <div className="text-xs text-zinc-500">{d.status} · {new Date(d.createdAt).toLocaleDateString()}</div>
+                      <div className="text-xs text-zinc-500">{d.status} · {d.itemCount} item{d.itemCount === 1 ? "" : "s"} · {new Date(d.createdAt).toLocaleDateString()}</div>
                       {d.description && <div className="mt-1 text-xs text-zinc-600 line-clamp-2">{d.description}</div>}
                     </div>
                     <Badge tone="emerald">{d.status}</Badge>
@@ -219,6 +388,9 @@ export default function DatasetsPage() {
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button onClick={() => setExpandedId(expandedId === d.id ? null : d.id)} className="rounded-full border border-zinc-200 px-3 py-1 text-xs hover:bg-zinc-50">
                       {expandedId === d.id ? "Hide" : "View"}
+                    </button>
+                    <button onClick={() => openIngest(d)} className="rounded-full border border-zinc-200 px-3 py-1 text-xs hover:bg-zinc-50">
+                      {ingestOpenId === d.id ? "Hide data" : "Ingest data"}
                     </button>
                     <button
                       onClick={() => {
@@ -247,13 +419,129 @@ export default function DatasetsPage() {
                       {d.updatedAt && <div>Updated: {d.updatedAt}</div>}
                     </div>
                   )}
+                  {ingestOpenId === d.id && (
+                    <div className="mt-3 space-y-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-xs">
+                      {ingestNotice && (
+                        <div role="status" className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700 ring-1 ring-emerald-200">
+                          {ingestNotice}{" "}
+                          <Link href="/projects" className="underline hover:text-emerald-900">
+                            Go to Projects to generate labeling tasks →
+                          </Link>
+                        </div>
+                      )}
+                      {ingestColumns.length > 0 && (
+                        <div>
+                          <span className="font-semibold text-zinc-900">Columns: </span>
+                          <span className="text-zinc-600">{ingestColumns.join(", ")}</span>
+                        </div>
+                      )}
+                      <div>
+                        <div className="font-semibold text-zinc-900">Text items (one per line)</div>
+                        <textarea
+                          value={ingestText}
+                          onChange={(e) => setIngestText(e.target.value)}
+                          placeholder={"First item to label\nSecond item to label"}
+                          rows={3}
+                          maxLength={500000}
+                          className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900"
+                        />
+                        <button
+                          onClick={() => onAddTextItems(d)}
+                          disabled={ingestBusy || ingestText.trim().length === 0}
+                          className={`mt-1 rounded-full px-4 py-1.5 text-xs font-medium text-white ${ingestBusy || ingestText.trim().length === 0 ? "bg-zinc-400" : "bg-zinc-900 hover:bg-zinc-800"}`}
+                        >
+                          {ingestBusy ? "Adding…" : "Add items"}
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label className="cursor-pointer rounded-full border border-zinc-200 bg-white px-4 py-1.5 text-xs hover:bg-zinc-50">
+                          Upload table CSV
+                          <input
+                            type="file"
+                            accept=".csv,.txt"
+                            className="hidden"
+                            onChange={(e) => {
+                              void onTableCsv(d, e.target.files?.[0]);
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
+                        <label className="cursor-pointer rounded-full border border-zinc-200 bg-white px-4 py-1.5 text-xs hover:bg-zinc-50">
+                          Upload images
+                          <input
+                            type="file"
+                            accept=".jpg,.jpeg,.png,.webp,.gif"
+                            multiple
+                            className="hidden"
+                            onChange={(e) => {
+                              void onImages(d, Array.from(e.target.files ?? []));
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
+                        {ingestBusy && <span className="text-zinc-500">Working…</span>}
+                      </div>
+                      <div>
+                        <div className="font-semibold text-zinc-900">
+                          Items {itemsData ? `(${itemsData.totalElements})` : ""}
+                        </div>
+                        {itemsLoading ? (
+                          <div className="mt-1 text-zinc-500">Loading items…</div>
+                        ) : itemsData && itemsData.content.length > 0 ? (
+                          <>
+                            <ul className="mt-1 space-y-1">
+                              {itemsData.content.map((item) => (
+                                <li key={item.id} className="rounded-lg border border-zinc-200 bg-white p-2">
+                                  {item.imageUrl && (
+                                    <img
+                                      src={`${apiBaseUrl()}${item.imageUrl}`}
+                                      alt={item.content}
+                                      className="mb-1 max-h-24 rounded"
+                                      loading="lazy"
+                                    />
+                                  )}
+                                  <div className="truncate text-zinc-900">{item.content}</div>
+                                  {Object.keys(item.rowData).length > 0 && (
+                                    <div className="mt-1 text-zinc-500">
+                                      {Object.entries(item.rowData).slice(0, 4).map(([k, v]) => (
+                                        <span key={k} className="mr-2">{k}: {String(v).slice(0, 40)}</span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                            <div className="mt-2 flex items-center gap-2">
+                              <button
+                                onClick={() => gotoItemsPage(d.id, itemsPage - 1)}
+                                disabled={itemsPage === 0 || itemsLoading}
+                                className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs hover:bg-zinc-50 disabled:opacity-40"
+                              >
+                                ← Prev
+                              </button>
+                              <span className="text-zinc-500">Page {itemsPage + 1} of {Math.max(itemsData.totalPages, 1)}</span>
+                              <button
+                                onClick={() => gotoItemsPage(d.id, itemsPage + 1)}
+                                disabled={itemsPage + 1 >= itemsData.totalPages || itemsLoading}
+                                className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs hover:bg-zinc-50 disabled:opacity-40"
+                              >
+                                Next →
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="mt-1 text-zinc-500">No items yet — ingest above to fill this dataset.</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                   {editingId === d.id && (
                     <div className="mt-3 space-y-2 rounded-lg border border-zinc-200 p-3">
                       <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" placeholder="Name" />
                       <textarea value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" placeholder="Description" rows={2} />
                       <div className="rounded-lg border border-dashed border-zinc-300 bg-zinc-50 p-2">
-                        <label className="text-xs font-medium text-zinc-700">Replace CSV file (optional)</label>
-                        <input type="file" accept=".csv" onChange={(e) => handleCsvFile(e, "edit")} className="mt-1 block w-full text-sm text-zinc-600 file:mr-2 file:rounded-full file:border file:border-zinc-200 file:bg-white file:px-2 file:py-1 file:text-xs" />
+                        <label className="text-xs font-medium text-zinc-700">Replace dataset file (optional)</label>
+                        <input type="file" accept=".csv,.txt" onChange={(e) => handleCsvFile(e, "edit")} className="mt-1 block w-full text-sm text-zinc-600 file:mr-2 file:rounded-full file:border file:border-zinc-200 file:bg-white file:px-2 file:py-1 file:text-xs" />
                         {csvError && <div className="mt-1 text-xs text-red-600">{csvError}</div>}
                       </div>
                       <input value={editForm.fileName} onChange={(e) => setEditForm({ ...editForm, fileName: e.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" placeholder="fileName" />

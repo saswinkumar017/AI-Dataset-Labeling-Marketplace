@@ -5,7 +5,7 @@ import AppShell from "@/components/AppShell";
 import Card from "@/components/Card";
 import Badge from "@/components/Badge";
 import RequireAuth from "@/components/RequireAuth";
-import { createProject, deleteProject, exportProject, friendlyDatasetError, friendlyExportError, friendlyProjectError, listDatasets, listProjects, updateProject, type DatasetResponse, type ProjectResponse } from "@/lib/api";
+import { assignTask, autoLabelTask, createProject, deleteProject, exportProject, friendlyDatasetError, friendlyExportError, friendlyProjectError, friendlyTaskError, generateProjectTasks, listDatasets, listProjectTasks, listProjects, updateProject, type DatasetResponse, type ProjectResponse, type TaskResponse } from "@/lib/api";
 
 type FormState = {
   datasetId: string;
@@ -47,6 +47,15 @@ export default function ProjectsPage() {
   const [exportingId, setExportingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<FormState>(emptyForm);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [tasksOpenId, setTasksOpenId] = useState<number | null>(null);
+  const [tasksByProject, setTasksByProject] = useState<Record<number, TaskResponse[]>>({});
+  const [tasksLoadingId, setTasksLoadingId] = useState<number | null>(null);
+  const [assignInputs, setAssignInputs] = useState<Record<number, string>>({});
+  const [assigningId, setAssigningId] = useState<number | null>(null);
+  const [generatingId, setGeneratingId] = useState<number | null>(null);
+  const [taskNotice, setTaskNotice] = useState<string | null>(null);
+  const [bulkAiProjectId, setBulkAiProjectId] = useState<number | null>(null);
+  const [bulkAiProgress, setBulkAiProgress] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -200,6 +209,72 @@ export default function ProjectsPage() {
     }
   }
 
+  async function onGenerate(projectId: number) {
+    if (generatingId !== null) return;
+    setGeneratingId(projectId);
+    setError(null);
+    setTaskNotice(null);
+    try {
+      const created = await generateProjectTasks(projectId);
+      setTaskNotice(
+        created.length === 0
+          ? "Queue is already complete — every dataset item has a task."
+          : `${created.length} task${created.length === 1 ? "" : "s"} generated from dataset items.`
+      );
+      setProjects(await listProjects());
+      if (tasksOpenId === projectId) {
+        const queue = await listProjectTasks(projectId);
+        setTasksByProject((prev) => ({ ...prev, [projectId]: queue }));
+      }
+    } catch (err) {
+      setError(friendlyTaskError(err));
+    } finally {
+      setGeneratingId(null);
+    }
+  }
+
+  async function onBulkAiLabel(projectId: number) {
+    if (bulkAiProjectId !== null) return;
+    const queue = tasksByProject[projectId] ?? [];
+    const candidates = queue.filter((t) =>
+      t.status === "PENDING" || t.status === "ASSIGNED" || t.status === "IN_PROGRESS" || t.status === "REJECTED"
+    );
+    if (candidates.length === 0) {
+      setTaskNotice("Nothing to label — every task is already submitted or approved.");
+      return;
+    }
+    setBulkAiProjectId(projectId);
+    setError(null);
+    setTaskNotice(null);
+    let done = 0;
+    let failed = 0;
+    for (const task of candidates) {
+      setBulkAiProgress(`AI labeling ${done + 1} of ${candidates.length}…`);
+      try {
+        await autoLabelTask(task.id);
+        done++;
+      } catch {
+        // One task failing (no text, AI down) never aborts the rest.
+        failed++;
+        done++;
+      }
+    }
+    setBulkAiProjectId(null);
+    setBulkAiProgress(null);
+    setTaskNotice(
+      failed === 0
+        ? `${done} task${done === 1 ? "" : "s"} AI-labeled — each is now waiting for human review.`
+        : `${done - failed} labeled, ${failed} skipped (see review queue for details).`
+    );
+    try {
+      const queue = await listProjectTasks(projectId);
+      setTasksByProject((prev) => ({ ...prev, [projectId]: queue }));
+      setProjects(await listProjects());
+    } catch (err) {
+      setError(friendlyTaskError(err));
+    }
+  }
+
   async function onDelete(id: number) {
     if (!confirm("Delete this project? This cannot be undone.")) return;
     setError(null);
@@ -208,6 +283,43 @@ export default function ProjectsPage() {
       await load();
     } catch (err) {
       setError(friendlyProjectError(err));
+    }
+  }
+
+  async function toggleTasks(projectId: number) {
+    if (tasksOpenId === projectId) {
+      setTasksOpenId(null);
+      return;
+    }
+    setTasksOpenId(projectId);
+    setTasksLoadingId(projectId);
+    setError(null);
+    try {
+      const queue = await listProjectTasks(projectId);
+      setTasksByProject((prev) => ({ ...prev, [projectId]: queue }));
+    } catch (err) {
+      setError(friendlyTaskError(err));
+    } finally {
+      setTasksLoadingId(null);
+    }
+  }
+
+  async function onAssign(taskId: number, projectId: number) {
+    const email = (assignInputs[taskId] ?? "").trim();
+    if (!email || assigningId !== null) return;
+    setAssigningId(taskId);
+    setError(null);
+    try {
+      const updated = await assignTask(taskId, email);
+      setTasksByProject((prev) => ({
+        ...prev,
+        [projectId]: (prev[projectId] ?? []).map((t) => (t.id === taskId ? updated : t)),
+      }));
+      setAssignInputs((prev) => ({ ...prev, [taskId]: "" }));
+    } catch (err) {
+      setError(friendlyTaskError(err));
+    } finally {
+      setAssigningId(null);
     }
   }
 
@@ -296,13 +408,35 @@ export default function ProjectsPage() {
                       ))}
                     </div>
                   )}
+                  <div className="mt-2 text-xs text-zinc-500">
+                    {p.totalTasks} task{p.totalTasks === 1 ? "" : "s"} · {p.pendingTasks} pending · {p.submittedTasks} submitted · {p.approvedTasks} approved
+                    {p.rejectedTasks > 0 && <span> · {p.rejectedTasks} needs rework</span>}
+                  </div>
+                  {taskNotice && tasksOpenId === p.id && (
+                    <div role="status" className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700 ring-1 ring-emerald-200">
+                      {taskNotice}
+                    </div>
+                  )}
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Link href={`/annotate?projectId=${p.id}`} className="rounded-full bg-zinc-900 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-800">
                       Annotate
                     </Link>
+                    <Link href={`/projects/${p.id}`} className="rounded-full border border-zinc-200 px-3 py-1 text-xs hover:bg-zinc-50">
+                      Detail
+                    </Link>
                     <Link href={`/review?projectId=${p.id}`} className="rounded-full border border-zinc-200 px-3 py-1 text-xs hover:bg-zinc-50">
                       Review
                     </Link>
+                    <button onClick={() => toggleTasks(p.id)} className="rounded-full border border-zinc-200 px-3 py-1 text-xs hover:bg-zinc-50">
+                      {tasksOpenId === p.id ? "Hide tasks" : "Tasks & assign"}
+                    </button>
+                    <button
+                      onClick={() => onGenerate(p.id)}
+                      disabled={generatingId === p.id}
+                      className="rounded-full border border-zinc-200 px-3 py-1 text-xs hover:bg-zinc-50 disabled:opacity-40"
+                    >
+                      {generatingId === p.id ? "Generating…" : "Generate tasks"}
+                    </button>
                     <button onClick={() => setExpandedId(expandedId === p.id ? null : p.id)} className="rounded-full border border-zinc-200 px-3 py-1 text-xs hover:bg-zinc-50">
                       {expandedId === p.id ? "Hide" : "View"}
                     </button>
@@ -325,6 +459,80 @@ export default function ProjectsPage() {
                       Delete
                     </button>
                   </div>
+                  {tasksOpenId === p.id && (
+                    <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-xs">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="font-semibold text-zinc-900">Tasks & assignment</div>
+                        <button
+                          onClick={() => onBulkAiLabel(p.id)}
+                          disabled={bulkAiProjectId !== null}
+                          className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
+                        >
+                          {bulkAiProjectId === p.id ? (bulkAiProgress ?? "Labeling…") : "AI label all pending"}
+                        </button>
+                      </div>
+                      {tasksLoadingId === p.id ? (
+                        <div className="mt-2 text-zinc-500">Loading tasks…</div>
+                      ) : (tasksByProject[p.id] ?? []).length === 0 ? (
+                        (() => {
+                          const datasetItems =
+                            datasets.find((d) => d.id === p.datasetId)?.itemCount ?? 0;
+                          return datasetItems > 0 ? (
+                            <div className="mt-2 text-zinc-500">
+                              This project’s dataset has {datasetItems} item{datasetItems === 1 ? "" : "s"} but no tasks yet.
+                              <button
+                                onClick={() => onGenerate(p.id)}
+                                disabled={generatingId === p.id}
+                                className="ml-2 rounded-full bg-zinc-900 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-40"
+                              >
+                                {generatingId === p.id ? "Generating…" : `Generate ${datasetItems} tasks`}
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="mt-2 text-zinc-500">
+                              No tasks yet — add items from the <Link href={`/annotate?projectId=${p.id}`} className="underline">annotation workspace</Link>.
+                            </div>
+                          );
+                        })()
+                      ) : (
+                        <ul className="mt-2 space-y-2">
+                          {(tasksByProject[p.id] ?? []).map((t) => (
+                            <li key={t.id} className="rounded-lg border border-zinc-200 bg-white p-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="font-medium text-zinc-900">
+                                  Task #{t.id} · {t.status}
+                                  <span className="ml-2 font-normal text-zinc-500">
+                                    {t.assignedToEmail ? `→ ${t.assignedToEmail}` : "→ unassigned"}
+                                  </span>
+                                </span>
+                                <Link href={`/annotate?taskId=${t.id}`} className="underline text-zinc-600 hover:text-zinc-900">
+                                  Open
+                                </Link>
+                              </div>
+                              <div className="mt-1 truncate text-zinc-500">{t.itemData || "(empty item)"}</div>
+                              <div className="mt-2 flex gap-2">
+                                <input
+                                  value={assignInputs[t.id] ?? ""}
+                                  onChange={(e) => setAssignInputs((prev) => ({ ...prev, [t.id]: e.target.value }))}
+                                  placeholder="annotator email"
+                                  type="email"
+                                  maxLength={255}
+                                  className="w-full rounded-lg border border-zinc-200 px-2 py-1 text-xs outline-none focus:border-zinc-900"
+                                />
+                                <button
+                                  onClick={() => onAssign(t.id, p.id)}
+                                  disabled={assigningId === t.id}
+                                  className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium text-white ${assigningId === t.id ? "bg-zinc-400" : "bg-zinc-900 hover:bg-zinc-800"}`}
+                                >
+                                  {assigningId === t.id ? "Assigning…" : "Assign"}
+                                </button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
                   {expandedId === p.id && (
                     <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-xs">
                       <div>ID: {p.id}</div>

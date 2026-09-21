@@ -1,14 +1,34 @@
 import axios from "axios";
 
-const baseURL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+/**
+ * Backend base URL. It must come from the environment (client/.env.local,
+ * see client/.env.example) — there is intentionally no hardcoded fallback,
+ * so a misconfigured deployment fails with a clear message instead of
+ * silently calling the wrong server. The check runs per request (not at
+ * module load) so unit tests importing these helpers need no live backend.
+ */
+function resolveBaseUrl(): string {
+  const url = process.env.NEXT_PUBLIC_API_URL;
+  if (!url) {
+    throw new Error(
+      "NEXT_PUBLIC_API_URL is not set. Copy client/.env.example to client/.env.local and set it (e.g. http://localhost:8080)."
+    );
+  }
+  return url;
+}
+
+/** Absolute backend origin, for building links the browser fetches directly (e.g. stored images). */
+export function apiBaseUrl(): string {
+  return resolveBaseUrl().replace(/\/$/, "");
+}
 
 export const api = axios.create({
-  baseURL,
   headers: { "Content-Type": "application/json" },
   timeout: 10000,
 });
 
 api.interceptors.request.use((config) => {
+  config.baseURL = resolveBaseUrl();
   if (typeof window !== "undefined") {
     const token = localStorage.getItem("labelmate_token");
     if (token) {
@@ -59,6 +79,8 @@ export type DatasetResponse = {
   filePath: string | null;
   fileSizeBytes: number | null;
   checksumSha256: string | null;
+  columns: string[];
+  itemCount: number;
   createdAt: string;
   updatedAt: string | null;
 };
@@ -71,6 +93,11 @@ export type ProjectResponse = {
   labelType: string | null;
   labels: string[];
   status: "DRAFT" | "IN_PROGRESS" | "COMPLETED";
+  totalTasks: number;
+  pendingTasks: number;
+  submittedTasks: number;
+  approvedTasks: number;
+  rejectedTasks: number;
   createdAt: string;
   updatedAt: string | null;
 };
@@ -137,6 +164,105 @@ export async function updateDataset(
 
 export async function deleteDataset(id: number) {
   await api.delete(`/api/datasets/${id}`);
+}
+
+export type FileUploadResponse = {
+  fileName: string;
+  filePath: string;
+  fileSizeBytes: number;
+  checksumSha256: string;
+};
+
+export async function uploadDatasetFile(file: File) {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await api.post<FileUploadResponse>("/api/datasets/upload", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 60000,
+  });
+  return res.data;
+}
+
+export type DatasetItemResponse = {
+  id: number;
+  datasetId: number;
+  content: string;
+  rowData: Record<string, string>;
+  imageUrl: string | null;
+  mediaType: string | null;
+  createdAt: string;
+};
+
+export type TableIngestResult = {
+  datasetId: number;
+  columns: string[];
+  inserted: number;
+  totalItems: number;
+};
+
+export type PagedResponse<T> = {
+  content: T[];
+  totalElements: number;
+  totalPages: number;
+  number: number;
+  size: number;
+};
+
+export async function addDatasetItems(datasetId: number, contents: string[]) {
+  const res = await api.post<DatasetItemResponse[]>(`/api/datasets/${datasetId}/items`, { contents }, {
+    timeout: 120000,
+  });
+  return res.data;
+}
+
+export async function listDatasetItems(datasetId: number) {
+  const res = await api.get<DatasetItemResponse[]>(`/api/datasets/${datasetId}/items`);
+  return res.data;
+}
+
+export async function listDatasetItemsPaged(datasetId: number, page: number, size: number) {
+  const res = await api.get<PagedResponse<DatasetItemResponse>>(`/api/datasets/${datasetId}/items/paged`, {
+    params: { page, size },
+  });
+  return res.data;
+}
+
+export async function getDatasetColumns(datasetId: number) {
+  const res = await api.get<{ datasetId: number; columns: string[] }>(
+    `/api/datasets/${datasetId}/columns`
+  );
+  return res.data;
+}
+
+export async function addTableRows(
+  datasetId: number,
+  data: { columns: string[]; rows: Record<string, string>[] }
+) {
+  const res = await api.post<TableIngestResult>(`/api/datasets/${datasetId}/table-rows`, data, {
+    timeout: 120000,
+  });
+  return res.data;
+}
+
+export async function uploadTableCsv(datasetId: number, file: File) {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await api.post<TableIngestResult>(`/api/datasets/${datasetId}/table-upload`, form, {
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 120000,
+  });
+  return res.data;
+}
+
+export async function uploadDatasetImages(datasetId: number, files: File[], captions?: string[]) {
+  const form = new FormData();
+  files.forEach((file) => form.append("files", file));
+  (captions ?? []).forEach((caption) => form.append("captions", caption));
+  const res = await api.post<DatasetItemResponse[]>(`/api/datasets/${datasetId}/images`, form, {
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 120000,
+  });
+  return res.data;
 }
 
 export async function listProjects() {
@@ -220,6 +346,10 @@ export type TaskResponse = {
   itemIndex: number | null;
   itemData: string | null;
   status: TaskStatus;
+  assignedToId: number | null;
+  assignedToEmail: string | null;
+  projectName: string | null;
+  item: DatasetItemResponse | null;
   createdAt: string;
   updatedAt: string | null;
 };
@@ -251,6 +381,38 @@ export async function createTask(projectId: number, data: { itemData?: string | 
 
 export async function createTasksBulk(projectId: number, items: string[]) {
   const res = await api.post<TaskResponse[]>(`/api/projects/${projectId}/tasks/bulk`, { items });
+  return res.data;
+}
+
+export async function generateProjectTasks(projectId: number) {
+  const res = await api.post<TaskResponse[]>(`/api/projects/${projectId}/tasks/generate`, {}, {
+    timeout: 120000,
+  });
+  return res.data;
+}
+
+export async function listAssignedTasks() {
+  const res = await api.get<TaskResponse[]>("/api/tasks/assigned");
+  return res.data;
+}
+
+export async function getTask(taskId: number) {
+  const res = await api.get<TaskResponse>(`/api/tasks/${taskId}`);
+  return res.data;
+}
+
+export async function assignTask(taskId: number, assigneeEmail: string) {
+  const res = await api.post<TaskResponse>(`/api/tasks/${taskId}/assign`, { assigneeEmail });
+  return res.data;
+}
+
+export async function startTask(taskId: number) {
+  const res = await api.post<TaskResponse>(`/api/tasks/${taskId}/start`, {});
+  return res.data;
+}
+
+export async function submitTask(taskId: number) {
+  const res = await api.post<TaskResponse>(`/api/tasks/${taskId}/submit`, {});
   return res.data;
 }
 
@@ -363,6 +525,8 @@ export type DashboardSummary = {
   reviewsApproved: number;
   reviewsRejected: number;
   pendingReviews: number;
+  assignedToMe: number;
+  assignedNeedsAction: number;
 };
 
 export async function dashboardSummary() {
@@ -381,6 +545,13 @@ export type SuggestionResponse = {
 
 export async function suggestLabel(taskId: number, labels: string[]) {
   const res = await api.post<SuggestionResponse>(`/api/tasks/${taskId}/suggest`, { labels });
+  return res.data;
+}
+
+export async function autoLabelTask(taskId: number, confidence?: number | null) {
+  const res = await api.post<AnnotationResponse>(`/api/ai/tasks/${taskId}/auto-label`, {
+    confidence: confidence ?? null,
+  });
   return res.data;
 }
 
