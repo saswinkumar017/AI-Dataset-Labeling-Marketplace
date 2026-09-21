@@ -11,6 +11,10 @@ public record TaskResponse(
         Integer itemIndex,
         String itemData,
         TaskStatus status,
+        Long assignedToId,
+        String assignedToEmail,
+        String projectName,
+        DatasetItemResponse item,
         LocalDateTime createdAt,
         LocalDateTime updatedAt) {
 
@@ -22,6 +26,10 @@ public record TaskResponse(
                 task.getItemIndex(),
                 task.getItemData(),
                 task.getStatus(),
+                task.getAssignedTo() != null ? task.getAssignedTo().getId() : null,
+                task.getAssignedTo() != null ? task.getAssignedTo().getEmail() : null,
+                task.getProject() != null ? task.getProject().getName() : null,
+                task.getDatasetItem() != null ? DatasetItemResponse.from(task.getDatasetItem()) : null,
                 task.getCreatedAt(),
                 task.getUpdatedAt());
     }

@@ -7,6 +7,8 @@ import com.labelmate.labelmate.model.Dataset;
 import com.labelmate.labelmate.model.Label;
 import com.labelmate.labelmate.model.Project;
 import com.labelmate.labelmate.model.ProjectStatus;
+import com.labelmate.labelmate.model.Task;
+import com.labelmate.labelmate.model.TaskStatus;
 import com.labelmate.labelmate.model.User;
 import com.labelmate.labelmate.repository.DatasetRepository;
 import com.labelmate.labelmate.repository.LabelRepository;
@@ -41,18 +43,21 @@ public class ProjectService {
     private final LabelRepository labels;
     private final TaskRepository tasks;
     private final UserRepository users;
+    private final TaskService taskService;
 
     public ProjectService(
             ProjectRepository projects,
             DatasetRepository datasets,
             LabelRepository labels,
             TaskRepository tasks,
-            UserRepository users) {
+            UserRepository users,
+            TaskService taskService) {
         this.projects = projects;
         this.datasets = datasets;
         this.labels = labels;
         this.tasks = tasks;
         this.users = users;
+        this.taskService = taskService;
     }
 
     /**
@@ -62,7 +67,9 @@ public class ProjectService {
      * forbids changing it afterwards; this keeps project ownership and
      * dataset ownership consistent by construction. A finite, non-empty
      * label scheme is required: annotation without possible labels is not
-     * a labeling project.
+     * a labeling project. One task per dataset item is generated
+     * immediately, so the annotation queue exists from the start (empty
+     * datasets simply yield an empty queue).
      */
     @Transactional
     public ProjectResponse create(ProjectRequest request, String ownerEmail) {
@@ -76,7 +83,9 @@ public class ProjectService {
         project.setInstructions(request.instructions());
         project.setLabelType(request.labelType());
         Project saved = projects.save(project);
-        return ProjectResponse.from(saved, syncLabels(saved, request.labels()));
+        List<String> scheme = syncLabels(saved, request.labels());
+        taskService.generateTasks(saved.getId(), ownerEmail);
+        return ProjectResponse.from(saved, scheme, taskCounts(saved.getId()));
     }
 
     /**
@@ -88,7 +97,8 @@ public class ProjectService {
     public List<ProjectResponse> listMine(String ownerEmail) {
         User owner = loadOwner(ownerEmail);
         return projects.findByOwnerIdOrderByCreatedAtDesc(owner.getId()).stream()
-                .map(project -> ProjectResponse.from(project, labelNames(project.getId())))
+                .map(project -> ProjectResponse.from(
+                        project, labelNames(project.getId()), taskCounts(project.getId())))
                 .toList();
     }
 
@@ -98,7 +108,33 @@ public class ProjectService {
      */
     public ProjectResponse getByIdForOwner(Long id, String ownerEmail) {
         Project project = loadOwned(id, ownerEmail);
-        return ProjectResponse.from(project, labelNames(project.getId()));
+        return ProjectResponse.from(project, labelNames(project.getId()), taskCounts(project.getId()));
+    }
+
+    /**
+     * Returns a single project when the caller owns it, administers the
+     * system, or is assigned to at least one of its tasks. Assignees need the
+     * label scheme and instructions to do their work; everything else about
+     * project management (update/delete) stays owner-only.
+     */
+    public ProjectResponse getVisible(Long id, String userEmail) {
+        User user = loadOwner(userEmail);
+        Project project = switch (user.getRole()) {
+            case ADMIN -> projects.findById(id).orElse(null);
+            default -> projects.findByIdAndOwnerId(id, user.getId()).orElse(null);
+        };
+        if (project == null) {
+            project = tasks.findByAssignedToIdOrderByIdAsc(user.getId()).stream()
+                    .map(Task::getProject)
+                    .filter(candidate -> candidate != null && candidate.getId().equals(id))
+                    .findFirst()
+                    .map(candidate -> projects.findById(id).orElse(null))
+                    .orElse(null);
+        }
+        if (project == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Project not found");
+        }
+        return ProjectResponse.from(project, labelNames(project.getId()), taskCounts(project.getId()));
     }
 
     /**
@@ -118,7 +154,7 @@ public class ProjectService {
         project.setLabelType(request.labelType());
         project.setUpdatedAt(LocalDateTime.now());
         Project saved = projects.save(project);
-        return ProjectResponse.from(saved, syncLabels(saved, request.labels()));
+        return ProjectResponse.from(saved, syncLabels(saved, request.labels()), taskCounts(saved.getId()));
     }
 
     /**
@@ -136,6 +172,21 @@ public class ProjectService {
         }
         labels.deleteAll(labels.findByProjectIdOrderByNameAsc(project.getId()));
         projects.delete(project);
+    }
+
+    /**
+     * Workflow counts driving progress bars: total queue size plus the
+     * interesting states. Single aggregate queries, no entity loading.
+     */
+    private ProjectResponse.TaskCounts taskCounts(Long projectId) {
+        return new ProjectResponse.TaskCounts(
+                tasks.countByProjectId(projectId),
+                tasks.countByProjectIdAndStatus(projectId, TaskStatus.PENDING)
+                        + tasks.countByProjectIdAndStatus(projectId, TaskStatus.ASSIGNED)
+                        + tasks.countByProjectIdAndStatus(projectId, TaskStatus.IN_PROGRESS),
+                tasks.countByProjectIdAndStatus(projectId, TaskStatus.SUBMITTED),
+                tasks.countByProjectIdAndStatus(projectId, TaskStatus.APPROVED),
+                tasks.countByProjectIdAndStatus(projectId, TaskStatus.REJECTED));
     }
 
     /**

@@ -50,6 +50,9 @@ class ProjectServiceTest {
     @Mock
     private UserRepository users;
 
+    @Mock
+    private TaskService taskService;
+
     @InjectMocks
     private ProjectService projectService;
 

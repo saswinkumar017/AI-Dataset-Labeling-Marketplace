@@ -61,6 +61,19 @@ public class TaskController {
         return ResponseEntity.status(HttpStatus.CREATED).body(tasks);
     }
 
+    /**
+     * Generates one task per dataset item for a project owned by the caller.
+     * Idempotent: items that already have a task are skipped, so it is safe
+     * to re-run after ingesting more data.
+     */
+    @PostMapping("/generate")
+    @Operation(summary = "Generate tasks from the project's dataset items")
+    public ResponseEntity<List<TaskResponse>> generate(
+            @PathVariable Long projectId, Authentication authentication) {
+        List<TaskResponse> tasks = taskService.generateTasks(projectId, authentication.getName());
+        return ResponseEntity.status(HttpStatus.CREATED).body(tasks);
+    }
+
     /** Lists the queue of a project owned by the caller. */
     @GetMapping
     @Operation(summary = "List tasks in a project")

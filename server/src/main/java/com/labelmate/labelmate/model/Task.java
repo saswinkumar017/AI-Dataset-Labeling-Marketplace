@@ -29,6 +29,15 @@ public class Task {
     @JoinColumn(name = "dataset_id", nullable = false)
     private Dataset dataset;
 
+    /**
+     * The dataset item this task labels. Null for manually queued tasks that
+     * carry only {@link #itemData}; always set for tasks generated from
+     * dataset items, which is how the workspace shows full row/image content.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "dataset_item_id")
+    private DatasetItem datasetItem;
+
     @Column(name = "item_index")
     private Integer itemIndex;
 
@@ -80,6 +89,14 @@ public class Task {
 
     public void setDataset(Dataset dataset) {
         this.dataset = dataset;
+    }
+
+    public DatasetItem getDatasetItem() {
+        return datasetItem;
+    }
+
+    public void setDatasetItem(DatasetItem datasetItem) {
+        this.datasetItem = datasetItem;
     }
 
     public Integer getItemIndex() {

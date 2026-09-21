@@ -11,5 +11,7 @@ public record DashboardSummary(
         long annotationCount,
         long reviewsApproved,
         long reviewsRejected,
-        long pendingReviews) {
+        long pendingReviews,
+        long assignedToMe,
+        long assignedNeedsAction) {
 }

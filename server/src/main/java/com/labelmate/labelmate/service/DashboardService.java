@@ -24,9 +24,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Real workflow numbers for the dashboard. Every count is derived from the
- * calling user's own projects through the existing repositories, so the
- * dashboard can never show another user's work and no statistic is
- * fabricated. Only counts are returned, never entity graphs.
+ * calling user's own projects plus tasks explicitly assigned to them through
+ * the existing repositories, so the dashboard can never show another user's
+ * unassigned work and no statistic is fabricated. Only counts are returned,
+ * never entity graphs.
  */
 @Service
 public class DashboardService {
@@ -55,7 +56,7 @@ public class DashboardService {
 
     /**
      * Summarizes dataset, project, task, annotation, and review state for the
-     * calling user.
+     * calling user, including tasks assigned to them by other project owners.
      */
     @Transactional(readOnly = true)
     public DashboardSummary summarize(String userEmail) {
@@ -108,6 +109,12 @@ public class DashboardService {
         }
 
         annotatedIds.removeAll(reviewedIds);
+
+        List<Task> assigned = tasks.findByAssignedToIdOrderByIdAsc(user.getId());
+        long assignedNeedsAction = assigned.stream()
+                .filter(task -> task.getStatus() != TaskStatus.APPROVED
+                        && task.getStatus() != TaskStatus.SUBMITTED)
+                .count();
         return new DashboardSummary(
                 datasetCount,
                 owned.size(),
@@ -119,6 +126,8 @@ public class DashboardService {
                 annotationCount,
                 reviewsApproved,
                 reviewsRejected,
-                annotatedIds.size());
+                annotatedIds.size(),
+                assigned.size(),
+                assignedNeedsAction);
     }
 }
