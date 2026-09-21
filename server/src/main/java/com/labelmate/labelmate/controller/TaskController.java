@@ -1,5 +1,6 @@
 package com.labelmate.labelmate.controller;
 
+import com.labelmate.labelmate.dto.TaskBulkRequest;
 import com.labelmate.labelmate.dto.TaskRequest;
 import com.labelmate.labelmate.dto.TaskResponse;
 import com.labelmate.labelmate.model.TaskStatus;
@@ -47,6 +48,17 @@ public class TaskController {
         TaskRequest effective = request == null ? new TaskRequest(null, null) : request;
         TaskResponse task = taskService.create(projectId, effective, authentication.getName());
         return ResponseEntity.status(HttpStatus.CREATED).body(task);
+    }
+
+    /** Adds many items to the queue at once (dataset/CSV import path). */
+    @PostMapping("/bulk")
+    @Operation(summary = "Create many tasks in a project")
+    public ResponseEntity<List<TaskResponse>> createBulk(
+            @PathVariable Long projectId,
+            @Valid @RequestBody TaskBulkRequest request,
+            Authentication authentication) {
+        List<TaskResponse> tasks = taskService.createBulk(projectId, request, authentication.getName());
+        return ResponseEntity.status(HttpStatus.CREATED).body(tasks);
     }
 
     /** Lists the queue of a project owned by the caller. */

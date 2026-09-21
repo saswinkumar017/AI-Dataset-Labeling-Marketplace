@@ -8,6 +8,7 @@ import RequireAuth from "@/components/RequireAuth";
 import {
   createAnnotation,
   createTask,
+  createTasksBulk,
   deleteAnnotation,
   friendlyAiError,
   friendlyAnnotationError,
@@ -43,6 +44,8 @@ export default function AnnotatePage() {
   const [submitted, setSubmitted] = useState<AnnotationResponse[]>([]);
   const [label, setLabel] = useState("");
   const [newItem, setNewItem] = useState("");
+  const [bulkText, setBulkText] = useState("");
+  const [importing, setImporting] = useState(false);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -293,6 +296,94 @@ export default function AnnotatePage() {
     setLabel(suggestion.suggestedLabel);
     setSuggestion(null);
     setNotice(`AI suggested “${suggestion.suggestedLabel}” — check it and submit when you agree.`);
+  }
+
+  function splitCsvLine(line: string): string[] {
+    const cells: string[] = [];
+    let current = "";
+    let quoted = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (quoted) {
+        if (ch === '"') {
+          if (line[i + 1] === '"') {
+            current += '"';
+            i++;
+          } else {
+            quoted = false;
+          }
+        } else {
+          current += ch;
+        }
+      } else if (ch === '"') {
+        quoted = true;
+      } else if (ch === ",") {
+        cells.push(current);
+        current = "";
+      } else {
+        current += ch;
+      }
+    }
+    cells.push(current);
+    return cells;
+  }
+
+  function extractItems(raw: string): string[] {
+    const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0);
+    if (lines.length === 0) return [];
+    const first = splitCsvLine(lines[0]);
+    const start = first.length > 1 && first[0].trim().toLowerCase() === "text" ? 1 : 0;
+    return lines
+      .slice(start)
+      .map((line) => {
+        const cells = splitCsvLine(line);
+        const cell = cells.length > 1 ? cells[0] : line;
+        return cell.trim().replace(/^"(.*)"$/, "$1").replace(/""/g, '"').trim();
+      })
+      .filter((item) => item.length > 0)
+      .slice(0, 500);
+  }
+
+  async function onBulkImport(e: React.FormEvent) {
+    e.preventDefault();
+    if (!active || importing) return;
+    const items = extractItems(bulkText);
+    if (items.length < 1) {
+      setError("Nothing to import — paste one item per line, or pick a CSV file below.");
+      return;
+    }
+    setImporting(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const created = await createTasksBulk(active.id, items);
+      setBulkText("");
+      setNotice(`${created.length} item${created.length === 1 ? "" : "s"} added to the queue.`);
+      await loadQueue(active.id);
+    } catch (err) {
+      setError(friendlyTaskError(err));
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  function onBulkFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".csv") && !file.name.toLowerCase().endsWith(".txt")) {
+      setError("Please pick a .csv or .txt file.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError("File too large for bulk import — max 5 MB.");
+      return;
+    }
+    setError(null);
+    const reader = new FileReader();
+    reader.onload = () => setBulkText(typeof reader.result === "string" ? reader.result : "");
+    reader.onerror = () => setError("Could not read that file.");
+    reader.readAsText(file);
+    e.target.value = "";
   }
 
   function go(delta: number) {
@@ -621,6 +712,37 @@ export default function AnnotatePage() {
                       >
                         {addingItem ? "Adding…" : "Add"}
                       </button>
+                    </form>
+                  </Card>
+
+                  <Card className="mt-4">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Bulk import items</div>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Paste one item per line, or pick a CSV file (first column is used, header row skipped).
+                      Up to 500 items per import.
+                    </p>
+                    <form onSubmit={onBulkImport} className="mt-2 space-y-2">
+                      <textarea
+                        value={bulkText}
+                        onChange={(e) => setBulkText(e.target.value)}
+                        placeholder={"First item to label\nSecond item to label\n..."}
+                        rows={3}
+                        maxLength={250000}
+                        className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-900"
+                      />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label className="cursor-pointer rounded-full border border-zinc-200 px-4 py-2 text-xs hover:bg-zinc-50">
+                          Choose CSV file
+                          <input type="file" accept=".csv,.txt" onChange={onBulkFile} className="hidden" />
+                        </label>
+                        <button
+                          type="submit"
+                          disabled={importing}
+                          className={`rounded-full px-4 py-2 text-xs font-medium text-white ${importing ? "bg-zinc-400" : "bg-zinc-900 hover:bg-zinc-800"}`}
+                        >
+                          {importing ? "Importing..." : "Import items"}
+                        </button>
+                      </div>
                     </form>
                   </Card>
                 </>

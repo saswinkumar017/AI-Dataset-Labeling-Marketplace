@@ -171,6 +171,62 @@ class TaskIntegrationTest {
     }
 
     @Test
+    void shouldCreateBulkTasksAndSkipBlanks() throws Exception {
+        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        long datasetId = datasetIdFor(token, "Reviews");
+        long projectId = projectIdFor(token, datasetId, "Sentiment v1");
+
+        mockMvc.perform(post("/api/projects/" + projectId + "/tasks/bulk")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[\"First\",\"   \",\"Second\"]}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].itemIndex").value(0))
+                .andExpect(jsonPath("$[1].itemIndex").value(1));
+
+        MvcResult listed = mockMvc.perform(get("/api/projects/" + projectId + "/tasks")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn();
+        Assertions.assertEquals(
+                2, objectMapper.readTree(listed.getResponse().getContentAsString()).size());
+    }
+
+    @Test
+    void shouldRejectBulkOnForeignProject() throws Exception {
+        String mine = tokenFor("Mine", "mine@example.com", "secret123");
+        String other = tokenFor("Other", "other@example.com", "secret123");
+        long mineDataset = datasetIdFor(mine, "Mine Data");
+        long mineProject = projectIdFor(mine, mineDataset, "Mine Project");
+
+        mockMvc.perform(post("/api/projects/" + mineProject + "/tasks/bulk")
+                        .header("Authorization", "Bearer " + other)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[\"Hi\"]}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void shouldRejectInvalidBulkRequests() throws Exception {
+        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        long datasetId = datasetIdFor(token, "Reviews");
+        long projectId = projectIdFor(token, datasetId, "Sentiment v1");
+
+        mockMvc.perform(post("/api/projects/" + projectId + "/tasks/bulk")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[]}"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/api/projects/" + projectId + "/tasks/bulk")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[\"   \"]}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void shouldReturnNotFoundWhenProjectDoesNotExist() throws Exception {
         String token = tokenFor("Asha", "asha@example.com", "secret123");
 

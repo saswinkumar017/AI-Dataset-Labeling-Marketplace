@@ -249,6 +249,11 @@ export async function createTask(projectId: number, data: { itemData?: string | 
   return res.data;
 }
 
+export async function createTasksBulk(projectId: number, items: string[]) {
+  const res = await api.post<TaskResponse[]>(`/api/projects/${projectId}/tasks/bulk`, { items });
+  return res.data;
+}
+
 export async function listTaskAnnotations(taskId: number) {
   const res = await api.get<AnnotationResponse[]>("/api/annotations", { params: { taskId } });
   return res.data;

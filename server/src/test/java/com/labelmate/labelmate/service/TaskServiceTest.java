@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.labelmate.labelmate.dto.TaskBulkRequest;
 import com.labelmate.labelmate.dto.TaskRequest;
 import com.labelmate.labelmate.dto.TaskResponse;
 import com.labelmate.labelmate.exception.ApiException;
@@ -186,4 +187,52 @@ class TaskServiceTest {
         assertEquals(10L, response.projectId());
     }
 
+    @Test
+    void shouldCreateBulkTasksWithSequentialIndexes() throws Exception {
+        User owner = user("owner@example.com", 1L);
+        Project project = project(owner);
+        Task existing = new Task(project, project.getDataset(), TaskStatus.PENDING, LocalDateTime.now());
+        existing.setItemIndex(4);
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(projects.findByIdAndOwnerId(10L, 1L)).thenReturn(Optional.of(project));
+        when(tasks.findByProjectIdOrderByItemIndexAscIdAsc(10L)).thenReturn(List.of(existing));
+        when(tasks.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        List<TaskResponse> result = taskService.createBulk(
+                10L, new TaskBulkRequest(List.of("First", "  ", "Second")), "owner@example.com");
+
+        assertEquals(2, result.size());
+        assertEquals(5, result.get(0).itemIndex());
+        assertEquals(6, result.get(1).itemIndex());
+        assertEquals("First", result.get(0).itemData());
+    }
+
+    @Test
+    void shouldRejectBulkWhenNothingUsableRemains() throws Exception {
+        User owner = user("owner@example.com", 1L);
+        Project project = project(owner);
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(projects.findByIdAndOwnerId(10L, 1L)).thenReturn(Optional.of(project));
+
+        ApiException ex = assertThrows(
+                ApiException.class,
+                () -> taskService.createBulk(10L, new TaskBulkRequest(List.of("   ")), "owner@example.com"));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+        verify(tasks, never()).saveAll(any());
+    }
+
+    @Test
+    void shouldRejectBulkOnForeignProject() throws Exception {
+        User owner = user("owner@example.com", 1L);
+        when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
+        when(projects.findByIdAndOwnerId(10L, 1L)).thenReturn(Optional.empty());
+
+        ApiException ex = assertThrows(
+                ApiException.class,
+                () -> taskService.createBulk(10L, new TaskBulkRequest(List.of("Hi")), "owner@example.com"));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
+        verify(tasks, never()).saveAll(any());
+    }
 }

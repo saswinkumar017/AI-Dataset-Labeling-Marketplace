@@ -1,5 +1,6 @@
 package com.labelmate.labelmate.service;
 
+import com.labelmate.labelmate.dto.TaskBulkRequest;
 import com.labelmate.labelmate.dto.TaskRequest;
 import com.labelmate.labelmate.dto.TaskResponse;
 import com.labelmate.labelmate.exception.ApiException;
@@ -12,6 +13,7 @@ import com.labelmate.labelmate.repository.ProjectRepository;
 import com.labelmate.labelmate.repository.TaskRepository;
 import com.labelmate.labelmate.repository.UserRepository;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -49,6 +51,38 @@ public class TaskService {
         task.setItemData(request.itemData());
         task.setItemIndex(request.itemIndex());
         return TaskResponse.from(tasks.save(task));
+    }
+
+    /**
+     * Adds many items to the queue at once (dataset/CSV import path).
+     * Blank lines are skipped; when nothing usable remains the request is
+     * rejected instead of silently creating an empty batch. New items are
+     * appended after the highest existing index so queue order stays stable.
+     */
+    @Transactional
+    public List<TaskResponse> createBulk(Long projectId, TaskBulkRequest request, String userEmail) {
+        Project project = loadOwnedProject(projectId, userEmail);
+        List<String> usable = request.items().stream()
+                .filter(item -> item != null && !item.isBlank())
+                .map(String::strip)
+                .toList();
+        if (usable.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "no usable items provided");
+        }
+        int nextIndex = tasks.findByProjectIdOrderByItemIndexAscIdAsc(project.getId()).stream()
+                .filter(task -> task.getItemIndex() != null)
+                .mapToInt(Task::getItemIndex)
+                .max()
+                .orElse(-1)
+                + 1;
+        List<Task> batch = new ArrayList<>();
+        for (String item : usable) {
+            Task task = new Task(project, project.getDataset(), TaskStatus.PENDING, LocalDateTime.now());
+            task.setItemData(item);
+            task.setItemIndex(nextIndex++);
+            batch.add(task);
+        }
+        return tasks.saveAll(batch).stream().map(TaskResponse::from).toList();
     }
 
     /**
