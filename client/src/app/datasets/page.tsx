@@ -285,7 +285,7 @@ export default function DatasetsPage() {
   }
 
   async function onDelete(id: number) {
-    if (!confirm("Delete this dataset? This cannot be undone.")) return;
+    if (!confirm("Delete this dataset? Its items, projects, tasks and annotations go with it. This cannot be undone.")) return;
     setError(null);
     try {
       await deleteDataset(id);

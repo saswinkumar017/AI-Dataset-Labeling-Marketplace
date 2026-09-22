@@ -3,6 +3,7 @@ package com.labelmate.labelmate.service;
 import com.labelmate.labelmate.dto.ProjectRequest;
 import com.labelmate.labelmate.dto.ProjectResponse;
 import com.labelmate.labelmate.exception.ApiException;
+import com.labelmate.labelmate.model.Annotation;
 import com.labelmate.labelmate.model.Dataset;
 import com.labelmate.labelmate.model.Label;
 import com.labelmate.labelmate.model.Project;
@@ -10,9 +11,12 @@ import com.labelmate.labelmate.model.ProjectStatus;
 import com.labelmate.labelmate.model.Task;
 import com.labelmate.labelmate.model.TaskStatus;
 import com.labelmate.labelmate.model.User;
+import com.labelmate.labelmate.repository.AiSuggestionRepository;
+import com.labelmate.labelmate.repository.AnnotationRepository;
 import com.labelmate.labelmate.repository.DatasetRepository;
 import com.labelmate.labelmate.repository.LabelRepository;
 import com.labelmate.labelmate.repository.ProjectRepository;
+import com.labelmate.labelmate.repository.ReviewRepository;
 import com.labelmate.labelmate.repository.TaskRepository;
 import com.labelmate.labelmate.repository.UserRepository;
 import java.time.LocalDateTime;
@@ -42,6 +46,9 @@ public class ProjectService {
     private final DatasetRepository datasets;
     private final LabelRepository labels;
     private final TaskRepository tasks;
+    private final AnnotationRepository annotations;
+    private final ReviewRepository reviews;
+    private final AiSuggestionRepository suggestions;
     private final UserRepository users;
     private final TaskService taskService;
 
@@ -50,12 +57,18 @@ public class ProjectService {
             DatasetRepository datasets,
             LabelRepository labels,
             TaskRepository tasks,
+            AnnotationRepository annotations,
+            ReviewRepository reviews,
+            AiSuggestionRepository suggestions,
             UserRepository users,
             TaskService taskService) {
         this.projects = projects;
         this.datasets = datasets;
         this.labels = labels;
         this.tasks = tasks;
+        this.annotations = annotations;
+        this.reviews = reviews;
+        this.suggestions = suggestions;
         this.users = users;
         this.taskService = taskService;
     }
@@ -160,18 +173,41 @@ public class ProjectService {
     /**
      * Deletes a project only when it belongs to the calling user.
      *
-     * <p>Label options are owned configuration and go down with the project.
-     * A project with annotation tasks is refused with 409 instead: tasks
-     * (and their annotations) are worked data, never silently cascadeable.
+     * <p>Deletion cascades through everything the project produced — reviews,
+     * annotations, AI suggestions, tasks, then label options — because worked
+     * data has no independent lifecycle: tasks cannot be listed, annotated,
+     * or exported without their project, and leaving orphaned rows would
+     * corrupt counts and exports. The UI confirms the scope before calling.
      */
     @Transactional
     public void delete(Long id, String ownerEmail) {
         Project project = loadOwned(id, ownerEmail);
-        if (!tasks.findByProjectIdOrderByItemIndexAscIdAsc(project.getId()).isEmpty()) {
-            throw new ApiException(HttpStatus.CONFLICT, "project has annotation tasks and cannot be deleted");
+        List<Task> queue = tasks.findByProjectIdOrderByItemIndexAscIdAsc(project.getId());
+        for (Task task : queue) {
+            List<Annotation> taskAnnotations =
+                    annotations.findByTaskIdOrderByCreatedAtDesc(task.getId());
+            for (Annotation annotation : taskAnnotations) {
+                reviews.deleteAll(reviews.findByAnnotationIdOrderByReviewedAtDesc(annotation.getId()));
+            }
+            annotations.deleteAll(taskAnnotations);
+            suggestions.deleteAll(suggestions.findByTaskId(task.getId()));
         }
+        tasks.deleteAll(queue);
         labels.deleteAll(labels.findByProjectIdOrderByNameAsc(project.getId()));
         projects.delete(project);
+    }
+
+    /**
+     * Deletes every project on one dataset for the calling user, cascading
+     * through each project's queue. Used by dataset deletion; ownership is
+     * re-checked per project inside {@link #delete}, so the whole operation
+     * rolls back rather than partially deleting on any mismatch.
+     */
+    @Transactional
+    public void deleteProjectsOfDataset(Long datasetId, String ownerEmail) {
+        for (Project project : projects.findByDatasetId(datasetId)) {
+            delete(project.getId(), ownerEmail);
+        }
     }
 
     /**

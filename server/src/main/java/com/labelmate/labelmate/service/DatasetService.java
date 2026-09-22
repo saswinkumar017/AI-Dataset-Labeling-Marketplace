@@ -36,6 +36,7 @@ public class DatasetService {
     private final DatasetItemService itemService;
     private final CsvTableParser csvParser;
     private final FileStorageService fileStorage;
+    private final ProjectService projectService;
 
     public DatasetService(
             DatasetRepository datasets,
@@ -43,13 +44,15 @@ public class DatasetService {
             DatasetItemRepository datasetItems,
             DatasetItemService itemService,
             CsvTableParser csvParser,
-            FileStorageService fileStorage) {
+            FileStorageService fileStorage,
+            ProjectService projectService) {
         this.datasets = datasets;
         this.users = users;
         this.datasetItems = datasetItems;
         this.itemService = itemService;
         this.csvParser = csvParser;
         this.fileStorage = fileStorage;
+        this.projectService = projectService;
     }
 
     /**
@@ -94,8 +97,21 @@ public class DatasetService {
         return DatasetResponse.from(saved, datasetItems.countByDatasetId(saved.getId()));
     }
 
+    /**
+     * Deletes a dataset only when it belongs to the calling user.
+     *
+     * <p>Deletion cascades through everything derived from the data —
+     * projects (with their tasks, annotations, and reviews) first, then
+     * items, then the dataset itself — because none of it is reachable or
+     * meaningful without the dataset, and orphaned rows would corrupt task
+     * queues and exports. The UI confirms the scope before calling.
+     */
+    @Transactional
     public void delete(Long id, String ownerEmail) {
-        datasets.delete(loadOwned(id, ownerEmail));
+        Dataset dataset = loadOwned(id, ownerEmail);
+        projectService.deleteProjectsOfDataset(dataset.getId(), ownerEmail);
+        datasetItems.deleteAll(datasetItems.findByDatasetIdOrderByIdAsc(dataset.getId()));
+        datasets.delete(dataset);
     }
 
     /**

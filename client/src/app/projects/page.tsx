@@ -276,7 +276,7 @@ export default function ProjectsPage() {
   }
 
   async function onDelete(id: number) {
-    if (!confirm("Delete this project? This cannot be undone.")) return;
+    if (!confirm("Delete this project? Its tasks, annotations and reviews go with it. This cannot be undone.")) return;
     setError(null);
     try {
       await deleteProject(id);

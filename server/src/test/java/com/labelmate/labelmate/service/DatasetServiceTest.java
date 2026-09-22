@@ -49,6 +49,9 @@ class DatasetServiceTest {
     @Mock
     private FileStorageService fileStorage;
 
+    @Mock
+    private ProjectService projectService;
+
     @InjectMocks
     private DatasetService datasetService;
 

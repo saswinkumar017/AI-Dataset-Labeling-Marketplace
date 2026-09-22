@@ -17,8 +17,11 @@ import com.labelmate.labelmate.model.ProjectStatus;
 import com.labelmate.labelmate.model.Role;
 import com.labelmate.labelmate.model.User;
 import com.labelmate.labelmate.repository.DatasetRepository;
+import com.labelmate.labelmate.repository.AiSuggestionRepository;
+import com.labelmate.labelmate.repository.AnnotationRepository;
 import com.labelmate.labelmate.repository.LabelRepository;
 import com.labelmate.labelmate.repository.ProjectRepository;
+import com.labelmate.labelmate.repository.ReviewRepository;
 import com.labelmate.labelmate.repository.TaskRepository;
 import com.labelmate.labelmate.repository.UserRepository;
 import java.time.LocalDateTime;
@@ -46,6 +49,15 @@ class ProjectServiceTest {
 
     @Mock
     private TaskRepository tasks;
+
+    @Mock
+    private AnnotationRepository annotations;
+
+    @Mock
+    private ReviewRepository reviews;
+
+    @Mock
+    private AiSuggestionRepository suggestions;
 
     @Mock
     private UserRepository users;
@@ -362,20 +374,33 @@ class ProjectServiceTest {
     }
 
     @Test
-    void shouldRefuseDeleteWhenTasksExist() throws Exception {
+    void shouldCascadeDeleteWorkWhenTasksExist() throws Exception {
         User owner = owner();
         Dataset dataset = dataset(owner);
         Project project = new Project(dataset, owner, "Mine", ProjectStatus.DRAFT, LocalDateTime.now());
         com.labelmate.labelmate.model.Task task = new com.labelmate.labelmate.model.Task(
                 project, dataset, com.labelmate.labelmate.model.TaskStatus.PENDING, LocalDateTime.now());
+        com.labelmate.labelmate.model.Annotation annotation =
+                new com.labelmate.labelmate.model.Annotation(
+                        task, owner, com.labelmate.labelmate.model.AnnotationSource.HUMAN, LocalDateTime.now());
+        com.labelmate.labelmate.model.Review review = new com.labelmate.labelmate.model.Review(
+                annotation, owner, com.labelmate.labelmate.model.ReviewDecision.APPROVED, LocalDateTime.now());
+        com.labelmate.labelmate.model.AiSuggestion suggestion =
+                new com.labelmate.labelmate.model.AiSuggestion(task, LocalDateTime.now());
         when(users.findByEmail("owner@example.com")).thenReturn(Optional.of(owner));
         when(projects.findByIdAndOwnerId(1L, owner.getId())).thenReturn(Optional.of(project));
         when(tasks.findByProjectIdOrderByItemIndexAscIdAsc(any())).thenReturn(List.of(task));
+        when(annotations.findByTaskIdOrderByCreatedAtDesc(any())).thenReturn(List.of(annotation));
+        when(reviews.findByAnnotationIdOrderByReviewedAtDesc(any())).thenReturn(List.of(review));
+        when(suggestions.findByTaskId(any())).thenReturn(List.of(suggestion));
+        when(labels.findByProjectIdOrderByNameAsc(any())).thenReturn(List.of());
 
-        ApiException ex = assertThrows(
-                ApiException.class, () -> projectService.delete(1L, "owner@example.com"));
+        projectService.delete(1L, "owner@example.com");
 
-        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
-        verify(projects, never()).delete(any(Project.class));
+        verify(reviews).deleteAll(List.of(review));
+        verify(annotations).deleteAll(List.of(annotation));
+        verify(suggestions).deleteAll(List.of(suggestion));
+        verify(tasks).deleteAll(List.of(task));
+        verify(projects).delete(project);
     }
 }

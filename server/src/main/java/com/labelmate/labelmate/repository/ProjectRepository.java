@@ -9,5 +9,7 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
 
     List<Project> findByOwnerIdOrderByCreatedAtDesc(Long ownerId);
 
+    List<Project> findByDatasetId(Long datasetId);
+
     Optional<Project> findByIdAndOwnerId(Long id, Long ownerId);
 }
