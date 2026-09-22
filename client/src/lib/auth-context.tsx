@@ -1,13 +1,22 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { loginRequest, meRequest, registerRequest, type BackendUser } from "./api";
+import {
+  loginRequest,
+  meRequest,
+  registerRequest,
+  requestRegistrationOtp,
+  verifyRegistrationOtp,
+  type BackendUser,
+} from "./api";
 
 type AuthState = {
   user: BackendUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (username: string, email: string, password: string) => Promise<void>;
+  requestOtp: (username: string, email: string, password: string) => Promise<number>;
+  verifyOtp: (email: string, code: string) => Promise<void>;
   logout: () => void;
 };
 
@@ -77,6 +86,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await registerRequest(username, email, password);
   }, []);
 
+  const requestOtp = useCallback(async (username: string, email: string, password: string) => {
+    const res = await requestRegistrationOtp(username, email, password);
+    return res.expiresInSeconds;
+  }, []);
+
+  const verifyOtp = useCallback(async (email: string, code: string) => {
+    await verifyRegistrationOtp(email, code);
+  }, []);
+
   const logout = useCallback(() => {
     localStorage.removeItem("labelmate_token");
     localStorage.removeItem("labelmate_user");
@@ -84,7 +102,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.location.href = "/";
   }, []);
 
-  const value = useMemo(() => ({ user, loading, login, register, logout }), [user, loading, login, register, logout]);
+  const value = useMemo(
+    () => ({ user, loading, login, register, requestOtp, verifyOtp, logout }),
+    [user, loading, login, register, requestOtp, verifyOtp, logout]
+  );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

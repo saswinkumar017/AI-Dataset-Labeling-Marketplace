@@ -115,6 +115,25 @@ export async function registerRequest(username: string, email: string, password:
   return res.data;
 }
 
+export type OtpSendResponse = {
+  message: string;
+  expiresInSeconds: number;
+};
+
+export async function requestRegistrationOtp(username: string, email: string, password: string) {
+  const res = await api.post<OtpSendResponse>("/api/auth/register/request-otp", {
+    username,
+    email,
+    password,
+  });
+  return res.data;
+}
+
+export async function verifyRegistrationOtp(email: string, code: string) {
+  const res = await api.post<BackendUser>("/api/auth/register/verify-otp", { email, code });
+  return res.data;
+}
+
 export async function loginRequest(email: string, password: string) {
   const res = await api.post<AuthResponse>("/api/auth/login", { email, password });
   return res.data;
@@ -295,6 +314,7 @@ export function friendlyAuthError(error: unknown): string {
     const backendMessage = (error.response?.data as { error?: string } | undefined)?.error;
     if (status === 409) return "An account with this email already exists. Try signing in.";
     if (status === 401) return "Incorrect email or password. Please try again.";
+    if (status === 429) return backendMessage ?? "Too many attempts. Please wait a minute and try again.";
     if (status === 400) return backendMessage ?? "Please check your details and try again.";
     if (error.code === "ECONNABORTED") return "Request timed out. Please try again.";
     if (error.message === "Network Error") return "Cannot reach the server. Is the backend running and is this page origin allowed (CORS)?";

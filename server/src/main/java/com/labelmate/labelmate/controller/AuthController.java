@@ -2,6 +2,8 @@ package com.labelmate.labelmate.controller;
 
 import com.labelmate.labelmate.dto.AuthResponse;
 import com.labelmate.labelmate.dto.LoginRequest;
+import com.labelmate.labelmate.dto.OtpSendResponse;
+import com.labelmate.labelmate.dto.OtpVerifyRequest;
 import com.labelmate.labelmate.dto.RegisterRequest;
 import com.labelmate.labelmate.dto.UserResponse;
 import com.labelmate.labelmate.service.AuthService;
@@ -32,6 +34,20 @@ public class AuthController {
     @Operation(summary = "Register a new user")
     public ResponseEntity<UserResponse> register(@Valid @RequestBody RegisterRequest request) {
         UserResponse user = authService.register(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(user);
+    }
+
+    @PostMapping("/register/request-otp")
+    @Operation(summary = "Step 1 of registration: validate details and email a 6-digit code")
+    public ResponseEntity<OtpSendResponse> requestOtp(@Valid @RequestBody RegisterRequest request) {
+        OtpSendResponse response = authService.requestRegistrationOtp(request);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/register/verify-otp")
+    @Operation(summary = "Step 2 of registration: verify the code and create the user")
+    public ResponseEntity<UserResponse> verifyOtp(@Valid @RequestBody OtpVerifyRequest request) {
+        UserResponse user = authService.verifyRegistrationOtp(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(user);
     }
 

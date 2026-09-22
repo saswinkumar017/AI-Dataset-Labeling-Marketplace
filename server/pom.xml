@@ -72,6 +72,13 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- Email delivery for registration OTP codes (SMTP, configured via MAIL_* env vars).
+             Without a configured host the OTP service logs the code instead of failing. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
         <!-- Spring AI (OpenAI-compatible chat; pointed at OpenRouter via base-url).
              Dormant by default (spring.ai.model.chat=none); enable explicitly. -->
         <dependency>

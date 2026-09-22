@@ -19,6 +19,7 @@ Nine tables cover the current scope. No microservices, no event tables, no billi
 Tables (current scope):
 
 - `users`
+- `registration_otps`
 - `datasets`
 - `dataset_items`
 - `projects`
@@ -57,6 +58,7 @@ Tables (current scope):
 | `annotations` | A label produced for a task (by a human). Stores the chosen label, source, and confidence when it originated from AI. | Collaboration requires distinguishing human work from AI pre-fill. |
 | `reviews` | Human decision on an annotation (approve, reject, edit) with an optional comment. | Product rule: human review is the source of truth. |
 | `ai_suggestions` | AI-generated suggestion for a task with confidence and model metadata. Never auto-approved. | AI Safety: suggestions must be retained separately, with confidence, and never silently become final. |
+| `registration_otps` | Pending email-verification for two-step signup (email, username, BCrypt password hash, SHA-256 code hash, expiry, attempts). Deleted after verification. | Registration must verify email ownership without creating unverified `users` rows; only the code hash is stored. |
 
 `Role` is **not a separate table** — it is an `ENUM('ADMIN','ANNOTATOR')` column on `users`. `ADMIN` is the platform Administrator; `ANNOTATOR` covers both **Dataset Owner** and **Annotator** capabilities from PROJECT.md §4. Whether an `ANNOTATOR` acts as a Dataset Owner is determined by ownership (`datasets.owner_id = users.id` and `projects.owner_id = users.id`), not by a third static role value — this matches architecture.md System Context `User — Dataset Owner / Annotator / Admin` where Dataset Owner is a resource-level responsibility. A dedicated `roles` table would add no value at this scale; the fixed two-value set is validated by the application and satisfies the capstone requirement of at least two distinct roles.
 
