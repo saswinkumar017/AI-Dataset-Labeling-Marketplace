@@ -104,7 +104,7 @@ class AnnotationWorkflowIntegrationTest {
 
     @Test
     void shouldCompleteFullAnnotationWorkflow() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
 
         MvcResult dataset = mockMvc.perform(post("/api/datasets")
                         .header("Authorization", "Bearer " + token)
@@ -181,8 +181,8 @@ class AnnotationWorkflowIntegrationTest {
 
     @Test
     void shouldEnforceWorkflowBoundaries() throws Exception {
-        String mine = tokenFor("Mine", "mine@example.com", "secret123");
-        String other = tokenFor("Other", "other@example.com", "secret123");
+        String mine = tokenFor("Mine", "mine@example.com", "Secret123!");
+        String other = tokenFor("Other", "other@example.com", "Secret123!");
 
         MvcResult dataset = mockMvc.perform(post("/api/datasets")
                         .header("Authorization", "Bearer " + mine)

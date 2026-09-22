@@ -58,11 +58,11 @@ class OtpServiceTest {
 
     @Test
     void shouldStorePendingOtpWhenRequestIsValid() {
-        RegisterRequest request = new RegisterRequest("Asha", "asha@example.com", "secret123");
+        RegisterRequest request = new RegisterRequest("Asha", "asha@example.com", "Secret123!");
         when(users.existsByEmail("asha@example.com")).thenReturn(false);
         when(otps.findTopByEmailOrderByCreatedAtDesc("asha@example.com"))
                 .thenReturn(Optional.empty());
-        when(passwordEncoder.encode("secret123")).thenReturn("hashed-secret");
+        when(passwordEncoder.encode("Secret123!")).thenReturn("hashed-secret");
 
         long expiry = otpService.requestOtp(request);
 
@@ -79,7 +79,7 @@ class OtpServiceTest {
 
     @Test
     void shouldRejectOtpRequestWhenEmailExists() {
-        RegisterRequest request = new RegisterRequest("Asha", "asha@example.com", "secret123");
+        RegisterRequest request = new RegisterRequest("Asha", "asha@example.com", "Secret123!");
         when(users.existsByEmail("asha@example.com")).thenReturn(true);
 
         ApiException ex = assertThrows(ApiException.class, () -> otpService.requestOtp(request));
@@ -90,7 +90,7 @@ class OtpServiceTest {
 
     @Test
     void shouldRejectOtpRequestDuringCooldown() {
-        RegisterRequest request = new RegisterRequest("Asha", "asha@example.com", "secret123");
+        RegisterRequest request = new RegisterRequest("Asha", "asha@example.com", "Secret123!");
         when(users.existsByEmail("asha@example.com")).thenReturn(false);
         RegistrationOtp recent = new RegistrationOtp("asha@example.com", "Asha", "hash",
                 "codehash".repeat(8).substring(0, 64),

@@ -124,7 +124,7 @@ class AiSuggestionIntegrationTest {
 
     @Test
     void shouldSuggestWithoutCreatingAnnotations() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long[] ids = setupProjectWithTask(token, "I love it.");
         Mockito.when(aiClient.complete(Mockito.anyString(), Mockito.anyString()))
                 .thenReturn("Positive\n87");
@@ -163,7 +163,7 @@ class AiSuggestionIntegrationTest {
 
     @Test
     void shouldMapAiFailureToServiceUnavailable() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long[] ids = setupProjectWithTask(token, "I love it.");
         Mockito.when(aiClient.complete(Mockito.anyString(), Mockito.anyString()))
                 .thenThrow(new AiException(AiException.Reason.NOT_CONFIGURED, "off"));
@@ -186,8 +186,8 @@ class AiSuggestionIntegrationTest {
 
     @Test
     void shouldEnforceSuggestBoundaries() throws Exception {
-        String mine = tokenFor("Mine", "mine@example.com", "secret123");
-        String other = tokenFor("Other", "other@example.com", "secret123");
+        String mine = tokenFor("Mine", "mine@example.com", "Secret123!");
+        String other = tokenFor("Other", "other@example.com", "Secret123!");
         long[] ids = setupProjectWithTask(mine, "I love it.");
 
         mockMvc.perform(post("/api/tasks/" + ids[1] + "/suggest")

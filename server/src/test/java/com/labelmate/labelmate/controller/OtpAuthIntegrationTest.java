@@ -111,7 +111,7 @@ class OtpAuthIntegrationTest {
     void shouldCreateUserAfterOtpVerificationAndSyncDatabase() throws Exception {
         mockMvc.perform(post("/api/auth/register/request-otp")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"Asha\",\"email\":\"asha@example.com\",\"password\":\"secret123\"}"))
+                        .content("{\"username\":\"Asha\",\"email\":\"asha@example.com\",\"password\":\"Secret123!\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.expiresInSeconds").value(600));
 
@@ -139,7 +139,7 @@ class OtpAuthIntegrationTest {
         // The new user can log in.
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"asha@example.com\",\"password\":\"secret123\"}"))
+                        .content("{\"email\":\"asha@example.com\",\"password\":\"Secret123!\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.token").exists());
     }
@@ -148,7 +148,7 @@ class OtpAuthIntegrationTest {
     void shouldRejectWrongOtpCode() throws Exception {
         mockMvc.perform(post("/api/auth/register/request-otp")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"Asha\",\"email\":\"asha@example.com\",\"password\":\"secret123\"}"))
+                        .content("{\"username\":\"Asha\",\"email\":\"asha@example.com\",\"password\":\"Secret123!\"}"))
                 .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/auth/register/verify-otp")
@@ -164,12 +164,12 @@ class OtpAuthIntegrationTest {
     void shouldRejectOtpRequestWhenEmailExists() throws Exception {
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"Asha\",\"email\":\"asha@example.com\",\"password\":\"secret123\"}"))
+                        .content("{\"username\":\"Asha\",\"email\":\"asha@example.com\",\"password\":\"Secret123!\"}"))
                 .andExpect(status().isCreated());
 
         mockMvc.perform(post("/api/auth/register/request-otp")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"username\":\"Asha\",\"email\":\"asha@example.com\",\"password\":\"secret123\"}"))
+                        .content("{\"username\":\"Asha\",\"email\":\"asha@example.com\",\"password\":\"Secret123!\"}"))
                 .andExpect(status().isConflict());
     }
 }

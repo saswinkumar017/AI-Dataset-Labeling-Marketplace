@@ -110,7 +110,7 @@ class DatasetItemIngestIntegrationTest {
 
     @Test
     void shouldIngestTextItemsAndSkipBlanks() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long datasetId = datasetFor(token, "Reviews");
 
         MvcResult saved = mockMvc.perform(post("/api/datasets/" + datasetId + "/items")
@@ -139,7 +139,7 @@ class DatasetItemIngestIntegrationTest {
 
     @Test
     void shouldIngestTableRowsAndTrackColumns() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long datasetId = datasetFor(token, "Table");
 
         mockMvc.perform(post("/api/datasets/" + datasetId + "/table-rows")
@@ -175,7 +175,7 @@ class DatasetItemIngestIntegrationTest {
 
     @Test
     void shouldParseCsvUploadQuoteAware() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long datasetId = datasetFor(token, "Csv");
         String csv = "review,rating\n\"Said \"\"great\"\", left.\",5\nSimple,4\n";
 
@@ -204,7 +204,7 @@ class DatasetItemIngestIntegrationTest {
 
     @Test
     void shouldIngestImagesAndRejectNonImages() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long datasetId = datasetFor(token, "Photos");
 
         BufferedImage image = new BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB);
@@ -239,7 +239,7 @@ class DatasetItemIngestIntegrationTest {
 
     @Test
     void shouldPageItems() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long datasetId = datasetFor(token, "Paged");
 
         mockMvc.perform(post("/api/datasets/" + datasetId + "/items")
@@ -260,8 +260,8 @@ class DatasetItemIngestIntegrationTest {
 
     @Test
     void shouldIsolateDatasetContentByOwner() throws Exception {
-        String mine = tokenFor("Mine", "mine@example.com", "secret123");
-        String other = tokenFor("Other", "other@example.com", "secret123");
+        String mine = tokenFor("Mine", "mine@example.com", "Secret123!");
+        String other = tokenFor("Other", "other@example.com", "Secret123!");
         long datasetId = datasetFor(mine, "Mine Data");
 
         // A stranger reaches nothing, even knowing the dataset id.

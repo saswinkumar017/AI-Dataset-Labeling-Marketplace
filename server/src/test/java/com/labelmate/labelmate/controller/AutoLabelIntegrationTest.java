@@ -122,7 +122,7 @@ class AutoLabelIntegrationTest {
 
     @Test
     void shouldReportUnavailableWhenAiIsNotConfigured() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long taskId = taskFor(token);
 
         // No provider in tests: honest 503, manual labeling still available.
@@ -142,8 +142,8 @@ class AutoLabelIntegrationTest {
 
     @Test
     void shouldEnforceAutoLabelBoundaries() throws Exception {
-        String owner = tokenFor("Owner", "owner@example.com", "secret123");
-        String stranger = tokenFor("Stranger", "stranger@example.com", "secret123");
+        String owner = tokenFor("Owner", "owner@example.com", "Secret123!");
+        String stranger = tokenFor("Stranger", "stranger@example.com", "Secret123!");
         long taskId = taskFor(owner);
 
         mockMvc.perform(post("/api/ai/tasks/" + taskId + "/auto-label")

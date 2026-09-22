@@ -126,7 +126,7 @@ class AnnotationIntegrationTest {
 
     @Test
     void shouldCreateAnnotationWhenRequestIsValid() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long datasetId = datasetIdFor(token, "Reviews");
         long projectId = projectIdFor(token, datasetId, "Sentiment v1");
         long taskId = taskIdFor(projectId, datasetId);
@@ -167,7 +167,7 @@ class AnnotationIntegrationTest {
 
     @Test
     void shouldRejectAnnotationCreationWhenRequestIsInvalid() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long datasetId = datasetIdFor(token, "Reviews");
         long projectId = projectIdFor(token, datasetId, "Sentiment v1");
         long taskId = taskIdFor(projectId, datasetId);
@@ -188,7 +188,7 @@ class AnnotationIntegrationTest {
 
     @Test
     void shouldReturnNotFoundWhenTaskDoesNotExist() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
 
         mockMvc.perform(post("/api/annotations")
                         .header("Authorization", "Bearer " + token)
@@ -199,8 +199,8 @@ class AnnotationIntegrationTest {
 
     @Test
     void shouldReturnNotFoundWhenAccessingAnotherUsersTask() throws Exception {
-        String mine = tokenFor("Mine", "mine@example.com", "secret123");
-        String other = tokenFor("Other", "other@example.com", "secret123");
+        String mine = tokenFor("Mine", "mine@example.com", "Secret123!");
+        String other = tokenFor("Other", "other@example.com", "Secret123!");
         long mineDataset = datasetIdFor(mine, "Mine Data");
         long mineProject = projectIdFor(mine, mineDataset, "Mine Project");
         long mineTask = taskIdFor(mineProject, mineDataset);
@@ -219,8 +219,8 @@ class AnnotationIntegrationTest {
 
     @Test
     void shouldReturnNotFoundWhenAnnotationBelongsToAnotherUser() throws Exception {
-        String mine = tokenFor("Mine", "mine@example.com", "secret123");
-        String other = tokenFor("Other", "other@example.com", "secret123");
+        String mine = tokenFor("Mine", "mine@example.com", "Secret123!");
+        String other = tokenFor("Other", "other@example.com", "Secret123!");
         long mineDataset = datasetIdFor(mine, "Mine Data");
         long mineProject = projectIdFor(mine, mineDataset, "Mine Project");
         long mineTask = taskIdFor(mineProject, mineDataset);
@@ -249,7 +249,7 @@ class AnnotationIntegrationTest {
 
     @Test
     void shouldUpdateAndDeleteAnnotationWhenOwnerMatches() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long datasetId = datasetIdFor(token, "Reviews");
         long projectId = projectIdFor(token, datasetId, "Sentiment v1");
         long taskId = taskIdFor(projectId, datasetId);
@@ -280,7 +280,7 @@ class AnnotationIntegrationTest {
 
     @Test
     void shouldListAnnotationsForOwnedProject() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long datasetId = datasetIdFor(token, "Reviews");
         long projectId = projectIdFor(token, datasetId, "Sentiment v1");
         long taskId = taskIdFor(projectId, datasetId);
@@ -300,8 +300,8 @@ class AnnotationIntegrationTest {
 
     @Test
     void shouldRejectProjectListingWhenProjectBelongsToAnotherUser() throws Exception {
-        String mine = tokenFor("Mine", "mine@example.com", "secret123");
-        String other = tokenFor("Other", "other@example.com", "secret123");
+        String mine = tokenFor("Mine", "mine@example.com", "Secret123!");
+        String other = tokenFor("Other", "other@example.com", "Secret123!");
         long mineDataset = datasetIdFor(mine, "Mine Data");
         long mineProject = projectIdFor(mine, mineDataset, "Mine Project");
 
@@ -313,8 +313,8 @@ class AnnotationIntegrationTest {
 
     @Test
     void shouldRejectAnnotationModificationWhenItBelongsToAnotherUser() throws Exception {
-        String mine = tokenFor("Mine", "mine@example.com", "secret123");
-        String other = tokenFor("Other", "other@example.com", "secret123");
+        String mine = tokenFor("Mine", "mine@example.com", "Secret123!");
+        String other = tokenFor("Other", "other@example.com", "Secret123!");
         long mineDataset = datasetIdFor(mine, "Mine Data");
         long mineProject = projectIdFor(mine, mineDataset, "Mine Project");
         long mineTask = taskIdFor(mineProject, mineDataset);
@@ -340,7 +340,7 @@ class AnnotationIntegrationTest {
 
     @Test
     void shouldRejectAnnotationUpdateWhenRequestIsInvalid() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long datasetId = datasetIdFor(token, "Reviews");
         long projectId = projectIdFor(token, datasetId, "Sentiment v1");
         long taskId = taskIdFor(projectId, datasetId);

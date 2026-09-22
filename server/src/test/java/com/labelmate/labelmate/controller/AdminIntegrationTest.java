@@ -91,8 +91,8 @@ class AdminIntegrationTest {
 
     @Test
     void shouldServeAdminPanelDataToAdmin() throws Exception {
-        tokenFor("Member", "member@example.com", "secret123");
-        String admin = tokenFor("Admin", "admin@example.com", "secret123");
+        tokenFor("Member", "member@example.com", "Secret123!");
+        String admin = tokenFor("Admin", "admin@example.com", "Secret123!");
         User promoted = users.findByEmail("admin@example.com").orElseThrow();
         promoted.setRole(Role.ADMIN);
         users.save(promoted);
@@ -115,7 +115,7 @@ class AdminIntegrationTest {
 
     @Test
     void shouldForbidNormalUsersFromAdminApi() throws Exception {
-        String member = tokenFor("Member", "member@example.com", "secret123");
+        String member = tokenFor("Member", "member@example.com", "Secret123!");
 
         mockMvc.perform(get("/api/admin/users")
                         .header("Authorization", "Bearer " + member))
@@ -138,8 +138,8 @@ class AdminIntegrationTest {
 
     @Test
     void shouldReflectWorkflowInOverview() throws Exception {
-        String owner = tokenFor("Owner", "owner@example.com", "secret123");
-        String admin = tokenFor("Admin", "admin@example.com", "secret123");
+        String owner = tokenFor("Owner", "owner@example.com", "Secret123!");
+        String admin = tokenFor("Admin", "admin@example.com", "Secret123!");
         User promoted = users.findByEmail("admin@example.com").orElseThrow();
         promoted.setRole(Role.ADMIN);
         users.save(promoted);

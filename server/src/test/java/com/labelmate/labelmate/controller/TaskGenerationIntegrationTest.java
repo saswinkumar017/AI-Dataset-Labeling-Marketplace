@@ -133,7 +133,7 @@ class TaskGenerationIntegrationTest {
 
     @Test
     void shouldGenerateOneTaskPerItemOnProjectCreation() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long datasetId = datasetWithItems(token, "I love it.", "Terrible.");
 
         MvcResult project = mockMvc.perform(post("/api/projects")
@@ -163,7 +163,7 @@ class TaskGenerationIntegrationTest {
 
     @Test
     void shouldBackfillLaterIngestIdempotently() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long datasetId = datasetWithItems(token, "First.");
         long projectId = projectOn(datasetId, token);
 
@@ -197,8 +197,8 @@ class TaskGenerationIntegrationTest {
 
     @Test
     void shouldEnforceGenerationBoundaries() throws Exception {
-        String owner = tokenFor("Owner", "owner@example.com", "secret123");
-        String stranger = tokenFor("Stranger", "stranger@example.com", "secret123");
+        String owner = tokenFor("Owner", "owner@example.com", "Secret123!");
+        String stranger = tokenFor("Stranger", "stranger@example.com", "Secret123!");
         long datasetId = datasetWithItems(owner, "Hello.");
         long projectId = projectOn(datasetId, owner);
 
@@ -216,7 +216,7 @@ class TaskGenerationIntegrationTest {
 
     @Test
     void shouldIngestAttachedCsvIntoItemsOnCreate() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         MockMultipartFile file = new MockMultipartFile(
                 "file", "reviews.csv", "text/csv", "text,label\nHi,Positive\n".getBytes(StandardCharsets.UTF_8));
 
@@ -258,7 +258,7 @@ class TaskGenerationIntegrationTest {
 
     @Test
     void shouldTreatMissingAttachmentAsMetadataOnly() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
 
         // A referenced file that was never uploaded stays a metadata record.
         mockMvc.perform(post("/api/datasets")

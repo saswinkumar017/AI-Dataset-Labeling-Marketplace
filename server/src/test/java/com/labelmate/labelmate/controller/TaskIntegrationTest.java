@@ -109,7 +109,7 @@ class TaskIntegrationTest {
 
     @Test
     void shouldCreateAndListTasksWhenOwnerMatches() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long datasetId = datasetIdFor(token, "Reviews");
         long projectId = projectIdFor(token, datasetId, "Sentiment v1");
 
@@ -159,8 +159,8 @@ class TaskIntegrationTest {
 
     @Test
     void shouldReturnNotFoundWhenProjectBelongsToAnotherUser() throws Exception {
-        String mine = tokenFor("Mine", "mine@example.com", "secret123");
-        String other = tokenFor("Other", "other@example.com", "secret123");
+        String mine = tokenFor("Mine", "mine@example.com", "Secret123!");
+        String other = tokenFor("Other", "other@example.com", "Secret123!");
         long mineDataset = datasetIdFor(mine, "Mine Data");
         long mineProject = projectIdFor(mine, mineDataset, "Mine Project");
 
@@ -177,7 +177,7 @@ class TaskIntegrationTest {
 
     @Test
     void shouldCreateBulkTasksAndSkipBlanks() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long datasetId = datasetIdFor(token, "Reviews");
         long projectId = projectIdFor(token, datasetId, "Sentiment v1");
 
@@ -200,8 +200,8 @@ class TaskIntegrationTest {
 
     @Test
     void shouldRejectBulkOnForeignProject() throws Exception {
-        String mine = tokenFor("Mine", "mine@example.com", "secret123");
-        String other = tokenFor("Other", "other@example.com", "secret123");
+        String mine = tokenFor("Mine", "mine@example.com", "Secret123!");
+        String other = tokenFor("Other", "other@example.com", "Secret123!");
         long mineDataset = datasetIdFor(mine, "Mine Data");
         long mineProject = projectIdFor(mine, mineDataset, "Mine Project");
 
@@ -214,7 +214,7 @@ class TaskIntegrationTest {
 
     @Test
     void shouldRejectInvalidBulkRequests() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long datasetId = datasetIdFor(token, "Reviews");
         long projectId = projectIdFor(token, datasetId, "Sentiment v1");
 
@@ -233,7 +233,7 @@ class TaskIntegrationTest {
 
     @Test
     void shouldReturnNotFoundWhenProjectDoesNotExist() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
 
         mockMvc.perform(post("/api/projects/99999/tasks")
                         .header("Authorization", "Bearer " + token)

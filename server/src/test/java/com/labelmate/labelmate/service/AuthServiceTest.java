@@ -55,9 +55,9 @@ class AuthServiceTest {
 
     @Test
     void shouldRegisterUserWhenRequestIsValid() {
-        RegisterRequest request = new RegisterRequest("Asha", "asha@example.com", "secret123");
+        RegisterRequest request = new RegisterRequest("Asha", "asha@example.com", "Secret123!");
         when(users.existsByEmail("asha@example.com")).thenReturn(false);
-        when(passwordEncoder.encode("secret123")).thenReturn("hashed-secret");
+        when(passwordEncoder.encode("Secret123!")).thenReturn("hashed-secret");
         when(users.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         UserResponse response = authService.register(request);
@@ -70,12 +70,12 @@ class AuthServiceTest {
         ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
         verify(users).save(saved.capture());
         assertEquals("hashed-secret", saved.getValue().getPasswordHash());
-        assertNotEquals("secret123", saved.getValue().getPasswordHash());
+        assertNotEquals("Secret123!", saved.getValue().getPasswordHash());
     }
 
     @Test
     void shouldRejectRegistrationWhenEmailExists() {
-        RegisterRequest request = new RegisterRequest("Asha", "asha@example.com", "secret123");
+        RegisterRequest request = new RegisterRequest("Asha", "asha@example.com", "Secret123!");
         when(users.existsByEmail("asha@example.com")).thenReturn(true);
 
         ApiException ex = assertThrows(ApiException.class, () -> authService.register(request));
@@ -90,7 +90,7 @@ class AuthServiceTest {
         when(users.findByEmail("asha@example.com")).thenReturn(Optional.of(user));
         when(jwtService.generateToken(user)).thenReturn("test-token");
 
-        AuthResponse response = authService.login(new LoginRequest("asha@example.com", "secret123"));
+        AuthResponse response = authService.login(new LoginRequest("asha@example.com", "Secret123!"));
 
         assertNotNull(response);
         assertEquals("test-token", response.token());
@@ -114,16 +114,16 @@ class AuthServiceTest {
 
     @Test
     void shouldStoreHashedPassword() {
-        RegisterRequest request = new RegisterRequest("Asha", "asha@example.com", "secret123");
+        RegisterRequest request = new RegisterRequest("Asha", "asha@example.com", "Secret123!");
         when(users.existsByEmail("asha@example.com")).thenReturn(false);
-        when(passwordEncoder.encode("secret123")).thenReturn("bcrypt-hashed-value");
+        when(passwordEncoder.encode("Secret123!")).thenReturn("bcrypt-hashed-value");
         when(users.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         authService.register(request);
 
         ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
         verify(users).save(saved.capture());
-        assertNotEquals("secret123", saved.getValue().getPasswordHash());
+        assertNotEquals("Secret123!", saved.getValue().getPasswordHash());
         assertEquals("bcrypt-hashed-value", saved.getValue().getPasswordHash());
     }
     @Test

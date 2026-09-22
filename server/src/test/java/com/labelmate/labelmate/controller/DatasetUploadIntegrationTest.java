@@ -91,7 +91,7 @@ class DatasetUploadIntegrationTest {
 
     @Test
     void shouldStoreDatasetFileAndReturnMetadata() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         MockMultipartFile file = new MockMultipartFile(
                 "file", "reviews.csv", "text/csv", "text,label\nHi,Positive\n".getBytes(StandardCharsets.UTF_8));
 
@@ -119,7 +119,7 @@ class DatasetUploadIntegrationTest {
 
     @Test
     void shouldRejectBadUploads() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
 
         mockMvc.perform(multipart("/api/datasets/upload")
                         .file(new MockMultipartFile("file", "run.exe", "application/octet-stream", "x".getBytes()))

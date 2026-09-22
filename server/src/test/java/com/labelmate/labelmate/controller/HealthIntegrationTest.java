@@ -104,7 +104,7 @@ class HealthIntegrationTest {
 
     @Test
     void shouldReturnNotFoundForUnknownApiPaths() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
 
         // Authenticated but unmapped: 404 with the standard error shape,
         // never a 500 leaking internals.

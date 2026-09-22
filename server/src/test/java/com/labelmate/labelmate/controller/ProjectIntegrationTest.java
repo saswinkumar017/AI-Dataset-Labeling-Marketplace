@@ -111,7 +111,7 @@ class ProjectIntegrationTest {
 
     @Test
     void shouldCreateProjectWhenRequestIsValid() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long datasetId = datasetIdFor(token, "Reviews");
 
         mockMvc.perform(post("/api/projects")
@@ -133,7 +133,7 @@ class ProjectIntegrationTest {
 
     @Test
     void shouldCreateProjectWithLabelScheme() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long datasetId = datasetIdFor(token, "Reviews");
 
         MvcResult created = mockMvc.perform(post("/api/projects")
@@ -165,7 +165,7 @@ class ProjectIntegrationTest {
 
     @Test
     void shouldRejectInvalidLabels() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long datasetId = datasetIdFor(token, "Reviews");
 
         mockMvc.perform(post("/api/projects")
@@ -179,7 +179,7 @@ class ProjectIntegrationTest {
 
     @Test
     void shouldRejectCreationWithoutLabels() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long datasetId = datasetIdFor(token, "Reviews");
 
         // No scheme at all.
@@ -210,7 +210,7 @@ class ProjectIntegrationTest {
 
     @Test
     void shouldRejectProjectCreationWhenRequestIsInvalid() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long datasetId = datasetIdFor(token, "Reviews");
 
         mockMvc.perform(post("/api/projects")
@@ -230,7 +230,7 @@ class ProjectIntegrationTest {
 
     @Test
     void shouldRejectCreationWhenDatasetDoesNotExist() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
 
         mockMvc.perform(post("/api/projects")
                         .header("Authorization", "Bearer " + token)
@@ -241,8 +241,8 @@ class ProjectIntegrationTest {
 
     @Test
     void shouldListOnlyMyProjects() throws Exception {
-        String mine = tokenFor("Mine", "mine@example.com", "secret123");
-        String other = tokenFor("Other", "other@example.com", "secret123");
+        String mine = tokenFor("Mine", "mine@example.com", "Secret123!");
+        String other = tokenFor("Other", "other@example.com", "Secret123!");
         long mineDataset = datasetIdFor(mine, "Mine Data");
         long otherDataset = datasetIdFor(other, "Other Data");
 
@@ -260,8 +260,8 @@ class ProjectIntegrationTest {
 
     @Test
     void shouldReturnNotFoundWhenAccessingAnotherUsersProject() throws Exception {
-        String mine = tokenFor("Mine", "mine@example.com", "secret123");
-        String other = tokenFor("Other", "other@example.com", "secret123");
+        String mine = tokenFor("Mine", "mine@example.com", "Secret123!");
+        String other = tokenFor("Other", "other@example.com", "Secret123!");
         long mineDataset = datasetIdFor(mine, "Mine Data");
         long projectId = projectIdFor(mine, mineDataset, "Mine One");
 
@@ -282,8 +282,8 @@ class ProjectIntegrationTest {
 
     @Test
     void shouldRejectCreationWhenDatasetBelongsToAnotherUser() throws Exception {
-        String mine = tokenFor("Mine", "mine@example.com", "secret123");
-        String other = tokenFor("Other", "other@example.com", "secret123");
+        String mine = tokenFor("Mine", "mine@example.com", "Secret123!");
+        String other = tokenFor("Other", "other@example.com", "Secret123!");
         long mineDataset = datasetIdFor(mine, "Mine Data");
 
         mockMvc.perform(post("/api/projects")
@@ -295,7 +295,7 @@ class ProjectIntegrationTest {
 
     @Test
     void shouldUpdateAndDeleteWhenOwnerMatches() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long datasetId = datasetIdFor(token, "Reviews");
         long projectId = projectIdFor(token, datasetId, "Old");
 
@@ -320,7 +320,7 @@ class ProjectIntegrationTest {
 
     @Test
     void shouldKeepDatasetLinkWhenUpdating() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long first = datasetIdFor(token, "First");
         long second = datasetIdFor(token, "Second");
         long projectId = projectIdFor(token, first, "Linked");
@@ -356,7 +356,7 @@ class ProjectIntegrationTest {
 
     @Test
     void shouldRejectProjectUpdateWhenRequestIsInvalid() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
         long datasetId = datasetIdFor(token, "Reviews");
         long projectId = projectIdFor(token, datasetId, "Old");
 
@@ -370,8 +370,8 @@ class ProjectIntegrationTest {
 
     @Test
     void shouldIgnoreForeignDatasetWhenUpdating() throws Exception {
-        String mine = tokenFor("Mine", "mine@example.com", "secret123");
-        String other = tokenFor("Other", "other@example.com", "secret123");
+        String mine = tokenFor("Mine", "mine@example.com", "Secret123!");
+        String other = tokenFor("Other", "other@example.com", "Secret123!");
         long mineDataset = datasetIdFor(mine, "Mine Data");
         long otherDataset = datasetIdFor(other, "Other Data");
         long projectId = projectIdFor(mine, mineDataset, "Linked");

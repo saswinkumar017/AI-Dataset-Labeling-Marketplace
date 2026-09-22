@@ -90,7 +90,7 @@ class DatasetIntegrationTest {
 
     @Test
     void shouldCreateDatasetWhenRequestIsValid() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
 
         mockMvc.perform(post("/api/datasets")
                         .header("Authorization", "Bearer " + token)
@@ -113,7 +113,7 @@ class DatasetIntegrationTest {
 
     @Test
     void shouldRejectDatasetCreationWhenRequestIsInvalid() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
 
         mockMvc.perform(post("/api/datasets")
                         .header("Authorization", "Bearer " + token)
@@ -125,8 +125,8 @@ class DatasetIntegrationTest {
 
     @Test
     void shouldListOnlyMyDatasets() throws Exception {
-        String mine = tokenFor("Mine", "mine@example.com", "secret123");
-        String other = tokenFor("Other", "other@example.com", "secret123");
+        String mine = tokenFor("Mine", "mine@example.com", "Secret123!");
+        String other = tokenFor("Other", "other@example.com", "Secret123!");
 
         mockMvc.perform(post("/api/datasets")
                         .header("Authorization", "Bearer " + mine)
@@ -154,8 +154,8 @@ class DatasetIntegrationTest {
 
     @Test
     void shouldReturnNotFoundWhenAccessingAnotherUsersDataset() throws Exception {
-        String mine = tokenFor("Mine", "mine@example.com", "secret123");
-        String other = tokenFor("Other", "other@example.com", "secret123");
+        String mine = tokenFor("Mine", "mine@example.com", "Secret123!");
+        String other = tokenFor("Other", "other@example.com", "Secret123!");
 
         MvcResult created = mockMvc.perform(post("/api/datasets")
                         .header("Authorization", "Bearer " + mine)
@@ -172,7 +172,7 @@ class DatasetIntegrationTest {
 
     @Test
     void shouldUpdateAndDeleteWhenOwnerMatches() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
 
         MvcResult created = mockMvc.perform(post("/api/datasets")
                         .header("Authorization", "Bearer " + token)
@@ -200,7 +200,7 @@ class DatasetIntegrationTest {
 
     @Test
     void shouldCreateDatasetWithFileMetadata() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
 
         mockMvc.perform(post("/api/datasets")
                         .header("Authorization", "Bearer " + token)
@@ -214,7 +214,7 @@ class DatasetIntegrationTest {
 
     @Test
     void shouldRejectUnsafeFileMetadata() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
 
         mockMvc.perform(post("/api/datasets")
                         .header("Authorization", "Bearer " + token)

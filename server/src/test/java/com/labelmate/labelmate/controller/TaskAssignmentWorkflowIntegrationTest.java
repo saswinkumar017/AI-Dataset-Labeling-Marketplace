@@ -124,8 +124,8 @@ class TaskAssignmentWorkflowIntegrationTest {
 
     @Test
     void shouldCompleteAssignAnnotateReviewExportWorkflow() throws Exception {
-        String owner = tokenFor("Owner", "owner@example.com", "secret123");
-        String annotator = tokenFor("Ben", "ben@example.com", "secret123");
+        String owner = tokenFor("Owner", "owner@example.com", "Secret123!");
+        String annotator = tokenFor("Ben", "ben@example.com", "Secret123!");
 
         long[] ids = setupProjectWithTask(owner, "I love the battery life.");
         long projectId = ids[0];
@@ -257,9 +257,9 @@ class TaskAssignmentWorkflowIntegrationTest {
 
     @Test
     void shouldEnforceAssignmentBoundaries() throws Exception {
-        String owner = tokenFor("Owner", "owner@example.com", "secret123");
-        String annotator = tokenFor("Ben", "ben@example.com", "secret123");
-        String stranger = tokenFor("Zed", "zed@example.com", "secret123");
+        String owner = tokenFor("Owner", "owner@example.com", "Secret123!");
+        String annotator = tokenFor("Ben", "ben@example.com", "Secret123!");
+        String stranger = tokenFor("Zed", "zed@example.com", "Secret123!");
 
         long[] ids = setupProjectWithTask(owner, "Hello.");
         long taskId = ids[1];

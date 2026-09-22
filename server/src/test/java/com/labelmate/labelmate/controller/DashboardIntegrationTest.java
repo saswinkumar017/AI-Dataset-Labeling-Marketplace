@@ -90,7 +90,7 @@ class DashboardIntegrationTest {
 
     @Test
     void shouldReturnZerosForFreshAccount() throws Exception {
-        String token = tokenFor("Asha", "asha@example.com", "secret123");
+        String token = tokenFor("Asha", "asha@example.com", "Secret123!");
 
         mockMvc.perform(get("/api/dashboard/summary")
                         .header("Authorization", "Bearer " + token))
@@ -103,8 +103,8 @@ class DashboardIntegrationTest {
 
     @Test
     void shouldReflectAnnotationAndReviewWorkflow() throws Exception {
-        String owner = tokenFor("Owner", "owner@example.com", "secret123");
-        String admin = tokenFor("Admin", "admin@example.com", "secret123");
+        String owner = tokenFor("Owner", "owner@example.com", "Secret123!");
+        String admin = tokenFor("Admin", "admin@example.com", "Secret123!");
         User reviewer = users.findByEmail("admin@example.com").orElseThrow();
         reviewer.setRole(Role.ADMIN);
         users.save(reviewer);

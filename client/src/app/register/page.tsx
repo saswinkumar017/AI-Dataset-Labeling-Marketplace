@@ -37,10 +37,24 @@ export default function RegisterPage() {
     return `${m}:${String(s).padStart(2, "0")}`;
   }
 
+  function passwordProblem(pw: string): string | null {
+    if (pw.length < 8) return "Password must be at least 8 characters.";
+    if (!/[a-z]/.test(pw) || !/[A-Z]/.test(pw))
+      return "Password must include both uppercase and lowercase letters.";
+    if (!/\d/.test(pw)) return "Password must include a number.";
+    if (!/[^A-Za-z0-9]/.test(pw)) return "Password must include a special character (e.g. !@#$).";
+    return null;
+  }
+
   async function onRequestOtp(e: React.FormEvent) {
     e.preventDefault();
-    if (!name || !email.includes("@") || password.length < 6) {
-      setError("Please fill in your name, a valid email, and a password with at least 6 characters.");
+    const pwProblem = passwordProblem(password);
+    if (!name || !email.includes("@") || pwProblem) {
+      setError(
+        !name || !email.includes("@")
+          ? "Please fill in your name and a valid email."
+          : (pwProblem as string)
+      );
       return;
     }
     setError("");
@@ -116,6 +130,7 @@ export default function RegisterPage() {
             <div>
               <label className="text-sm font-medium text-zinc-700">Password</label>
               <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="••••••••" autoComplete="new-password" className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900" />
+              <p className="mt-1 text-xs text-zinc-500">8+ characters with uppercase, lowercase, number and special character.</p>
             </div>
             {error && <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 ring-1 ring-amber-200">{error}</div>}
             <button type="submit" disabled={submitting} className={`w-full rounded-full py-2.5 text-sm font-medium text-white ${submitting ? "bg-zinc-400" : "bg-zinc-900 hover:bg-zinc-800"}`}>

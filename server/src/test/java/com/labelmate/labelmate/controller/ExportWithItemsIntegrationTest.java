@@ -95,8 +95,8 @@ class ExportWithItemsIntegrationTest {
 
     @Test
     void shouldExportFullRowDataAndColumns() throws Exception {
-        String owner = tokenFor("Owner", "owner@example.com", "secret123");
-        String admin = tokenFor("Admin", "admin@example.com", "secret123");
+        String owner = tokenFor("Owner", "owner@example.com", "Secret123!");
+        String admin = tokenFor("Admin", "admin@example.com", "Secret123!");
         User reviewer = users.findByEmail("admin@example.com").orElseThrow();
         reviewer.setRole(Role.ADMIN);
         users.save(reviewer);

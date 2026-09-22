@@ -96,8 +96,8 @@ class DeleteCascadeIntegrationTest {
 
     @Test
     void shouldCascadeDeleteProjectWithFullWorkflowPresent() throws Exception {
-        String owner = tokenFor("Owner", "owner@example.com", "secret123");
-        String admin = tokenFor("Admin", "admin@example.com", "secret123");
+        String owner = tokenFor("Owner", "owner@example.com", "Secret123!");
+        String admin = tokenFor("Admin", "admin@example.com", "Secret123!");
         User reviewer = users.findByEmail("admin@example.com").orElseThrow();
         reviewer.setRole(Role.ADMIN);
         users.save(reviewer);
@@ -168,7 +168,7 @@ class DeleteCascadeIntegrationTest {
 
     @Test
     void shouldCascadeDeleteDatasetThroughProjectsAndItems() throws Exception {
-        String owner = tokenFor("Owner", "owner@example.com", "secret123");
+        String owner = tokenFor("Owner", "owner@example.com", "Secret123!");
 
         MvcResult dataset = mockMvc.perform(post("/api/datasets")
                         .header("Authorization", "Bearer " + owner)
@@ -208,8 +208,8 @@ class DeleteCascadeIntegrationTest {
 
     @Test
     void shouldEnforceDeleteOwnership() throws Exception {
-        String owner = tokenFor("Owner", "owner@example.com", "secret123");
-        String stranger = tokenFor("Stranger", "stranger@example.com", "secret123");
+        String owner = tokenFor("Owner", "owner@example.com", "Secret123!");
+        String stranger = tokenFor("Stranger", "stranger@example.com", "Secret123!");
 
         MvcResult dataset = mockMvc.perform(post("/api/datasets")
                         .header("Authorization", "Bearer " + owner)

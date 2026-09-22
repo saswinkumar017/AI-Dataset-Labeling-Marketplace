@@ -136,8 +136,8 @@ class ReviewIntegrationTest {
 
     @Test
     void shouldApproveAnnotationWhenReviewerIsAdmin() throws Exception {
-        String owner = tokenFor("Owner", "owner@example.com", "secret123");
-        String admin = tokenFor("Admin", "admin@example.com", "secret123");
+        String owner = tokenFor("Owner", "owner@example.com", "Secret123!");
+        String admin = tokenFor("Admin", "admin@example.com", "Secret123!");
         promoteToAdmin("admin@example.com");
 
         long datasetId = datasetIdFor(owner, "Reviews");
@@ -182,8 +182,8 @@ class ReviewIntegrationTest {
 
     @Test
     void shouldRejectAnnotationAndReopenTask() throws Exception {
-        String owner = tokenFor("Owner", "owner@example.com", "secret123");
-        String admin = tokenFor("Admin", "admin@example.com", "secret123");
+        String owner = tokenFor("Owner", "owner@example.com", "Secret123!");
+        String admin = tokenFor("Admin", "admin@example.com", "Secret123!");
         promoteToAdmin("admin@example.com");
 
         long datasetId = datasetIdFor(owner, "Reviews");
@@ -215,7 +215,7 @@ class ReviewIntegrationTest {
 
     @Test
     void shouldForbidSelfReview() throws Exception {
-        String owner = tokenFor("Owner", "owner@example.com", "secret123");
+        String owner = tokenFor("Owner", "owner@example.com", "Secret123!");
 
         long datasetId = datasetIdFor(owner, "Reviews");
         long projectId = projectIdFor(owner, datasetId, "Sentiment v1");
@@ -231,8 +231,8 @@ class ReviewIntegrationTest {
 
     @Test
     void shouldRejectDuplicateReview() throws Exception {
-        String owner = tokenFor("Owner", "owner@example.com", "secret123");
-        String admin = tokenFor("Admin", "admin@example.com", "secret123");
+        String owner = tokenFor("Owner", "owner@example.com", "Secret123!");
+        String admin = tokenFor("Admin", "admin@example.com", "Secret123!");
         promoteToAdmin("admin@example.com");
 
         long datasetId = datasetIdFor(owner, "Reviews");
@@ -255,8 +255,8 @@ class ReviewIntegrationTest {
 
     @Test
     void shouldHideForeignAnnotationsFromStrangers() throws Exception {
-        String owner = tokenFor("Owner", "owner@example.com", "secret123");
-        String stranger = tokenFor("Stranger", "stranger@example.com", "secret123");
+        String owner = tokenFor("Owner", "owner@example.com", "Secret123!");
+        String stranger = tokenFor("Stranger", "stranger@example.com", "Secret123!");
 
         long datasetId = datasetIdFor(owner, "Reviews");
         long projectId = projectIdFor(owner, datasetId, "Sentiment v1");
@@ -276,8 +276,8 @@ class ReviewIntegrationTest {
 
     @Test
     void shouldValidateReviewRequests() throws Exception {
-        String owner = tokenFor("Owner", "owner@example.com", "secret123");
-        String admin = tokenFor("Admin", "admin@example.com", "secret123");
+        String owner = tokenFor("Owner", "owner@example.com", "Secret123!");
+        String admin = tokenFor("Admin", "admin@example.com", "Secret123!");
         promoteToAdmin("admin@example.com");
 
         long datasetId = datasetIdFor(owner, "Reviews");
