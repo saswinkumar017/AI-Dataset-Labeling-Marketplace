@@ -20,7 +20,7 @@ export default function RegisterPage() {
   const [submitting, setSubmitting] = useState(false);
   const [expiresIn, setExpiresIn] = useState(0);
   const [resendIn, setResendIn] = useState(0);
-
+  const [showPassword, setShowPassword] = useState(false);
   useEffect(() => {
     if (step !== "otp") return;
     if (expiresIn <= 0 && resendIn <= 0) return;
@@ -121,16 +121,39 @@ export default function RegisterPage() {
           <form onSubmit={onRequestOtp} className="mt-6 space-y-4">
             <div>
               <label className="text-sm font-medium text-zinc-700">Name</label>
-              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Asha Kumar" autoComplete="name" className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900" />
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your Name" autoComplete="name" className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900" />
             </div>
             <div>
               <label className="text-sm font-medium text-zinc-700">Email</label>
               <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="you@example.com" autoComplete="email" className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900" />
             </div>
             <div>
-              <label className="text-sm font-medium text-zinc-700">Password</label>
-              <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="••••••••" autoComplete="new-password" className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900" />
-              <p className="mt-1 text-xs text-zinc-500">8+ characters with uppercase, lowercase, number and special character.</p>
+              <label className="text-sm font-medium text-zinc-700">
+                Password
+              </label>
+
+              <input
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                type={showPassword ? "text" : "password"}
+                placeholder="••••••••"
+                autoComplete="new-password"
+                className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900"
+              />
+
+              <label className="mt-2 flex items-center gap-2 text-xs text-zinc-600">
+                <input
+                  type="checkbox"
+                  checked={showPassword}
+                  onChange={(e) => setShowPassword(e.target.checked)}
+                  className="h-4 w-4 rounded border-zinc-300"
+                />
+                Show password
+              </label>
+
+              <p className="mt-1 text-xs text-zinc-500">
+                8+ characters with uppercase, lowercase, number and special character.
+              </p>
             </div>
             {error && <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 ring-1 ring-amber-200">{error}</div>}
             <button type="submit" disabled={submitting} className={`w-full rounded-full py-2.5 text-sm font-medium text-white ${submitting ? "bg-zinc-400" : "bg-zinc-900 hover:bg-zinc-800"}`}>
