@@ -27,10 +27,17 @@ public class LabelSuggestionService {
 
     private final AiClient aiClient;
     private final AiProperties properties;
+    private final AiSettingsResolver resolver;
 
     public LabelSuggestionService(AiClient aiClient, AiProperties properties) {
+        this(aiClient, properties, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public LabelSuggestionService(AiClient aiClient, AiProperties properties, AiSettingsResolver resolver) {
         this.aiClient = aiClient;
         this.properties = properties;
+        this.resolver = resolver;
     }
 
     /**
@@ -96,7 +103,7 @@ public class LabelSuggestionService {
                         "AI suggested a label outside the project scheme"));
         BigDecimal confidence = lines.length > 1 ? parseConfidence(lines[1]) : null;
         log.info("AI suggestion parsed (confidence {})", confidence == null ? "absent" : confidence);
-        return new SuggestionResult(matched, confidence, properties.getModel());
+        return new SuggestionResult(matched, confidence, resolver != null ? resolver.model() : properties.getModel());
     }
 
     private BigDecimal parseConfidence(String line) {

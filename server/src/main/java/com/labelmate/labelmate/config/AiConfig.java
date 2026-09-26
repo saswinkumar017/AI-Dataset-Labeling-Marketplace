@@ -1,6 +1,7 @@
 package com.labelmate.labelmate.config;
 
 import com.labelmate.labelmate.service.ai.AiClient;
+import com.labelmate.labelmate.service.ai.AiSettingsResolver;
 import com.labelmate.labelmate.service.ai.NoOpAiClient;
 import com.labelmate.labelmate.service.ai.SpringAiClient;
 import org.springframework.ai.chat.client.ChatClient;
@@ -29,8 +30,9 @@ public class AiConfig {
     public AiClient springAiClient(
             ObjectProvider<ChatClient.Builder> builders,
             AiProperties properties,
-            @Value("${spring.ai.openai.api-key:}") String apiKey) {
-        return new SpringAiClient(builders, properties, apiKey);
+            @Value("${spring.ai.openai.api-key:}") String apiKey,
+            ObjectProvider<AiSettingsResolver> resolver) {
+        return new SpringAiClient(builders, properties, apiKey, resolver.getIfAvailable());
     }
 
     @Bean

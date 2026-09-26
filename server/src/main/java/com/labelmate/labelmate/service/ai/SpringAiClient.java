@@ -32,15 +32,26 @@ public class SpringAiClient implements AiClient {
     private final ObjectProvider<ChatClient.Builder> chatClientBuilder;
     private final AiProperties properties;
     private final String apiKey;
+    private final AiSettingsResolver resolver;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
     public SpringAiClient(
             ObjectProvider<ChatClient.Builder> chatClientBuilder,
             AiProperties properties,
             @Value("${spring.ai.openai.api-key:}") String apiKey) {
+        this(chatClientBuilder, properties, apiKey, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public SpringAiClient(
+            ObjectProvider<ChatClient.Builder> chatClientBuilder,
+            AiProperties properties,
+            @Value("${spring.ai.openai.api-key:}") String apiKey,
+            AiSettingsResolver resolver) {
         this.chatClientBuilder = chatClientBuilder;
         this.properties = properties;
         this.apiKey = apiKey;
+        this.resolver = resolver;
     }
 
     @Override
@@ -48,10 +59,11 @@ public class SpringAiClient implements AiClient {
         if (systemPrompt == null || systemPrompt.isBlank() || userPrompt == null || userPrompt.isBlank()) {
             throw new AiException(AiException.Reason.INVALID_RESPONSE, "AI prompt must not be empty");
         }
-        if (apiKey == null || apiKey.isBlank()) {
+        String effectiveKey = resolver != null ? resolver.apiKey() : apiKey;
+        if (effectiveKey == null || effectiveKey.isBlank()) {
             throw new AiException(
                     AiException.Reason.NOT_CONFIGURED,
-                    "AI provider key is not configured (set OPENROUTER_API_KEY)");
+                    "AI provider key is not configured (save it in /admin/settings)");
         }
         ChatClient.Builder builder = chatClientBuilder.getIfAvailable();
         if (builder == null) {

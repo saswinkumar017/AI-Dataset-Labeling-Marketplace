@@ -16,6 +16,9 @@ import com.labelmate.labelmate.repository.DatasetRepository;
 import com.labelmate.labelmate.repository.ProjectRepository;
 import com.labelmate.labelmate.repository.ReviewRepository;
 import com.labelmate.labelmate.repository.TaskRepository;
+import com.labelmate.labelmate.config.AiProperties;
+import com.labelmate.labelmate.repository.AppSettingRepository;
+import com.labelmate.labelmate.service.ai.AiClient;
 import com.labelmate.labelmate.repository.UserRepository;
 import java.lang.reflect.Field;
 import java.time.LocalDateTime;
@@ -51,6 +54,15 @@ class AdminServiceTest {
 
     @Mock
     private AiSuggestionRepository suggestions;
+
+    @Mock
+    private AppSettingRepository settings;
+
+    @Mock
+    private AiProperties aiProperties;
+
+    @Mock
+    private AiClient aiClient;
 
     @InjectMocks
     private AdminService adminService;
@@ -136,5 +148,44 @@ class AdminServiceTest {
                 ApiException.class, () -> adminService.overview("ghost@example.com"));
 
         assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatus());
+    }
+
+    @Test
+    void shouldPromoteAnnotatorToAdmin() throws Exception {
+        User admin = user("admin@example.com", 1L, Role.ADMIN);
+        User member = user("member@example.com", 2L, Role.ANNOTATOR);
+        when(users.findByEmail("admin@example.com")).thenReturn(Optional.of(admin));
+        when(users.findById(2L)).thenReturn(Optional.of(member));
+        when(users.save(member)).thenReturn(member);
+
+        UserResponse result = adminService.updateUserRole("admin@example.com", 2L, Role.ADMIN);
+
+        assertEquals(Role.ADMIN, result.role());
+    }
+
+    @Test
+    void shouldBlockSelfRoleChange() throws Exception {
+        User admin = user("admin@example.com", 1L, Role.ADMIN);
+        when(users.findByEmail("admin@example.com")).thenReturn(Optional.of(admin));
+        when(users.findById(1L)).thenReturn(Optional.of(admin));
+
+        ApiException ex = assertThrows(
+                ApiException.class, () -> adminService.updateUserRole("admin@example.com", 1L, Role.ANNOTATOR));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+    }
+
+    @Test
+    void shouldBlockDemotingLastAdmin() throws Exception {
+        User admin = user("admin@example.com", 1L, Role.ADMIN);
+        User other = user("other@example.com", 2L, Role.ADMIN);
+        when(users.findByEmail("admin@example.com")).thenReturn(Optional.of(admin));
+        when(users.findById(2L)).thenReturn(Optional.of(other));
+        when(users.findAll()).thenReturn(List.of(other));
+
+        ApiException ex = assertThrows(
+                ApiException.class, () -> adminService.updateUserRole("admin@example.com", 2L, Role.ANNOTATOR));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
     }
 }
