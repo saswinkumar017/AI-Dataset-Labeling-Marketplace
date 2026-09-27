@@ -634,6 +634,38 @@ export async function listAdminUsers() {
   return res.data;
 }
 
+export async function updateAdminUserRole(id: number, role: "ADMIN" | "ANNOTATOR") {
+  const res = await api.patch<BackendUser>(`/api/admin/users/${id}/role`, { role });
+  return res.data;
+}
+
+export type AdminAiSettings = {
+  apiKeyMasked: string;
+  apiKeyConfigured: boolean;
+  model: string;
+  baseUrl: string;
+  enabled: boolean;
+  chatModel: string;
+  beanActive: boolean;
+  live: boolean;
+};
+
+export async function getAdminAiSettings() {
+  const res = await api.get<AdminAiSettings>("/api/admin/ai-settings");
+  return res.data;
+}
+
+export async function updateAdminAiSettings(payload: {
+  apiKey?: string;
+  model?: string;
+  baseUrl?: string;
+  enabled?: boolean;
+  chatModel?: string;
+}) {
+  const res = await api.put<AdminAiSettings>("/api/admin/ai-settings", payload);
+  return res.data;
+}
+
 export function friendlyAdminError(error: unknown): string {
   if (axios.isAxiosError(error)) {
     const status = error.response?.status;
