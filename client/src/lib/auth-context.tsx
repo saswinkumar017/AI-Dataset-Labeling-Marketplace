@@ -13,7 +13,7 @@ import {
 type AuthState = {
   user: BackendUser | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<BackendUser>;
   register: (username: string, email: string, password: string) => Promise<void>;
   requestOtp: (username: string, email: string, password: string) => Promise<number>;
   verifyOtp: (email: string, code: string) => Promise<void>;
@@ -80,6 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem("labelmate_token", res.token);
     localStorage.setItem("labelmate_user", JSON.stringify(res.user));
     setUser(res.user);
+    return res.user;
   }, []);
 
   const register = useCallback(async (username: string, email: string, password: string) => {

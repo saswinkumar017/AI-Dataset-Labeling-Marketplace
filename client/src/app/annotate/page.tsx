@@ -600,7 +600,7 @@ export default function AnnotatePage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth roles={["ANNOTATOR"]}>
       <AppShell>
         <div className="mb-4">
           <h1 className="text-xl font-semibold text-zinc-900">Annotation workspace</h1>

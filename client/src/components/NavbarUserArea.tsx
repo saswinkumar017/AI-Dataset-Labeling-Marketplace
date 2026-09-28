@@ -19,11 +19,15 @@ export default function NavbarUserArea() {
 
   return (
     <div className="flex items-center gap-3">
-      <Link href="/dashboard" className="hidden text-sm text-zinc-600 hover:text-zinc-900 md:block">Dashboard</Link>
-      <Link href="/datasets" className="hidden text-sm font-medium text-zinc-900 hover:text-zinc-700 md:block">Datasets</Link>
-      <Link href="/projects" className="hidden text-sm text-zinc-600 hover:text-zinc-900 md:block">Projects</Link>
-      <Link href="/annotate" className="hidden text-sm text-zinc-600 hover:text-zinc-900 md:block">Annotate</Link>
-      <Link href="/review" className="hidden text-sm text-zinc-600 hover:text-zinc-900 md:block">Review</Link>
+      {user.role === "ANNOTATOR" && (
+        <nav className="hidden items-center gap-4 md:flex">
+          <Link href="/dashboard" className="text-sm text-zinc-600 hover:text-zinc-900">Dashboard</Link>
+          <Link href="/datasets" className="text-sm text-zinc-600 hover:text-zinc-900">Datasets</Link>
+          <Link href="/projects" className="text-sm text-zinc-600 hover:text-zinc-900">Projects</Link>
+          <Link href="/annotate" className="text-sm text-zinc-600 hover:text-zinc-900">Annotate</Link>
+          <Link href="/review" className="text-sm text-zinc-600 hover:text-zinc-900">Review</Link>
+        </nav>
+      )}
       {user.role === "ADMIN" && (
         <Link href="/admin" className="hidden text-sm font-medium text-zinc-900 hover:text-zinc-700 md:block">Admin</Link>
       )}

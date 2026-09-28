@@ -23,8 +23,9 @@ export default function LoginPage() {
     setError("");
     setSubmitting(true);
     try {
-      await login(email, password);
-      router.push("/dashboard");
+      await login(email, password).then((u) => {
+        router.push(u.role === "ADMIN" ? "/admin" : "/dashboard");
+      });
     } catch (err) {
       setError(friendlyAuthError(err));
     } finally {

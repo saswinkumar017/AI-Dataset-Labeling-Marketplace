@@ -296,7 +296,7 @@ export default function DatasetsPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth roles={["ANNOTATOR"]}>
       <AppShell>
         <div className="mb-6">
           <h1 className="text-xl font-semibold text-zinc-900">Datasets</h1>
@@ -323,9 +323,14 @@ export default function DatasetsPage() {
               {csvError && <div className="mt-2 text-xs text-red-600">{csvError}</div>}
             </div>
 
-            <button type="button" onClick={() => setShowMeta((v) => !v)} className="text-xs font-medium text-zinc-600 hover:text-zinc-900">
-              {showMeta ? "Hide" : "Show"} file details — fileName, filePath, fileSizeBytes, checksumSha256
-            </button>
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+              <button type="button" onClick={() => setShowMeta((v) => !v)} className="text-xs font-medium text-zinc-600 hover:text-zinc-900">
+                {showMeta ? "Hide" : "Show"} file details — fileName, filePath, fileSizeBytes, checksumSha256
+              </button>
+              <button type="submit" disabled={submitting} className={`rounded-full px-5 py-2 text-sm font-medium text-white ${submitting ? "bg-zinc-400" : "bg-zinc-900 hover:bg-zinc-800"}`}>
+                {submitting ? "Creating…" : "Create dataset"}
+              </button>
+            </div>
             {showMeta && (
               <div className="grid gap-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 md:grid-cols-2">
                 <div>
@@ -349,9 +354,6 @@ export default function DatasetsPage() {
                 </div>
               </div>
             )}
-            <button type="submit" disabled={submitting} className={`rounded-full px-5 py-2 text-sm font-medium text-white ${submitting ? "bg-zinc-400" : "bg-zinc-900 hover:bg-zinc-800"}`}>
-              {submitting ? "Creating…" : "Create dataset"}
-            </button>
           </form>
         </Card>
 

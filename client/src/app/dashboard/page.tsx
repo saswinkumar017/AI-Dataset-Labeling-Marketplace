@@ -51,7 +51,7 @@ export default function DashboardPage() {
   }, []);
 
   return (
-    <RequireAuth>
+    <RequireAuth roles={["ANNOTATOR"]}>
       <AppShell>
         <div className="mb-6">
           <h1 className="text-xl font-semibold text-zinc-900">Welcome, {user?.username ?? "labeler"}</h1>

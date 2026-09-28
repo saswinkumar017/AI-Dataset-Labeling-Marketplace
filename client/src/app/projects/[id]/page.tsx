@@ -263,7 +263,7 @@ export default function ProjectDetailPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth roles={["ANNOTATOR"]}>
       <AppShell>
         {!validId ? (
           <Card>

@@ -137,7 +137,7 @@ export default function ReviewPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth roles={["ANNOTATOR"]}>
       <AppShell>
         <div className="mb-4">
           <h1 className="text-xl font-semibold text-zinc-900">Review queue</h1>

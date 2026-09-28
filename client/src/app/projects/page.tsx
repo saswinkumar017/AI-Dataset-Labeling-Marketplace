@@ -324,7 +324,7 @@ export default function ProjectsPage() {
   }
 
   return (
-    <RequireAuth>
+    <RequireAuth roles={["ANNOTATOR"]}>
       <AppShell>
         <div className="mb-6">
           <h1 className="text-xl font-semibold text-zinc-900">Projects</h1>
