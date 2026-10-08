@@ -189,6 +189,71 @@ public class DatasetService {
         dataset.setFilePath(filePath);
         dataset.setFileSizeBytes(request.fileSizeBytes());
         dataset.setChecksumSha256(request.checksumSha256());
+        if (request.datasetType() != null) {
+            String kind = request.datasetType().strip();
+            dataset.setDatasetType(kind.isEmpty() ? null : kind.toUpperCase());
+        }
+        if (request.features() != null) {
+            dataset.setFeaturesJson(writeFeaturesJson(cleanFeatures(request.features())));
+            mergeColumnsFromFeatures(dataset);
+        }
+        if (request.labelColumn() != null) {
+            String labelColumn = request.labelColumn().strip();
+            dataset.setLabelColumn(labelColumn.isEmpty() ? null : labelColumn);
+        }
+    }
+
+    private java.util.List<com.labelmate.labelmate.dto.FeatureDef> cleanFeatures(
+            java.util.List<com.labelmate.labelmate.dto.FeatureDef> requested) {
+        java.util.List<com.labelmate.labelmate.dto.FeatureDef> cleaned = new java.util.ArrayList<>();
+        for (com.labelmate.labelmate.dto.FeatureDef feature : requested) {
+            if (feature == null || feature.name() == null || feature.name().isBlank()) {
+                continue;
+            }
+            String name = feature.name().strip();
+            boolean duplicate = cleaned.stream().anyMatch(existing -> existing.name().equalsIgnoreCase(name));
+            if (!duplicate) {
+                cleaned.add(new com.labelmate.labelmate.dto.FeatureDef(name, feature.normalizedType()));
+            }
+        }
+        return cleaned;
+    }
+
+    /** Declared features join the dataset header so multi-feature schemas exist before rows arrive. */
+    private void mergeColumnsFromFeatures(Dataset dataset) {
+        java.util.List<com.labelmate.labelmate.dto.FeatureDef> defs =
+                com.labelmate.labelmate.dto.DatasetItemResponse.parseFeatures(dataset.getFeaturesJson());
+        java.util.List<String> merged =
+                new java.util.ArrayList<>(com.labelmate.labelmate.dto.DatasetItemResponse.parseColumns(
+                        dataset.getColumnsJson()));
+        for (com.labelmate.labelmate.dto.FeatureDef def : defs) {
+            boolean known = merged.stream().anyMatch(column -> column.equalsIgnoreCase(def.name()));
+            if (!known) {
+                merged.add(def.name());
+            }
+        }
+        if (!merged.isEmpty()) {
+            try {
+                dataset.setColumnsJson(new com.fasterxml.jackson.databind.ObjectMapper()
+                        .writeValueAsString(merged));
+            } catch (Exception ex) {
+                throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "JSON encoding failed");
+            }
+            if ((dataset.getDatasetType() == null || dataset.getDatasetType().isBlank()) && merged.size() > 1) {
+                dataset.setDatasetType("TABULAR");
+            }
+        }
+    }
+
+    private String writeFeaturesJson(java.util.List<com.labelmate.labelmate.dto.FeatureDef> features) {
+        if (features == null || features.isEmpty()) {
+            return null;
+        }
+        try {
+            return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(features);
+        } catch (Exception ex) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "JSON encoding failed");
+        }
     }
 
     private void rejectUnsafePath(String filePath) {

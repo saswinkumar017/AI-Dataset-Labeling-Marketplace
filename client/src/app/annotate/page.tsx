@@ -19,6 +19,7 @@ import {
   generateProjectTasks,
   getProject,
   getTask,
+  hiddenColumnsFor,
   listAssignedTasks,
   listProjectAnnotations,
   listProjectReviews,
@@ -29,6 +30,7 @@ import {
   submitTask,
   suggestLabel,
   updateAnnotation,
+  visibleRowData,
   type AnnotationResponse,
   type ProjectResponse,
   type ReviewResponse,
@@ -246,11 +248,27 @@ export default function AnnotatePage() {
   }, [current, active]);
 
   useEffect(() => {
+    // Prior annotations stay hidden until there is work to show: a fresh
+    // (PENDING/ASSIGNED/IN_PROGRESS) item shows no label flags, so the
+    // annotator never sees the correct label before labeling. Submitted,
+    // approved, and rejected items show their history for review/rework.
     // State updates live in promise callbacks (not in the effect body) so the
     // per-item fetch complies with react-hooks/set-state-in-effect.
     if (!current) return;
     const taskId = current.id;
+    const needsHistory =
+      current.status === "SUBMITTED" ||
+      current.status === "APPROVED" ||
+      current.status === "REJECTED";
     let cancelled = false;
+    if (!needsHistory) {
+      void Promise.resolve().then(() => {
+        if (!cancelled) setSubmitted([]);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
     listTaskAnnotations(taskId)
       .then((data) => {
         if (cancelled) return;
@@ -744,20 +762,28 @@ export default function AnnotatePage() {
                         className="mt-2 max-h-80 rounded-lg ring-1 ring-zinc-200"
                       />
                     )}
-                    {current.item && Object.keys(current.item.rowData).length > 0 ? (
-                      <dl className="mt-2 space-y-1 text-sm leading-6 text-zinc-900">
-                        {Object.entries(current.item.rowData).map(([key, value]) => (
-                          <div key={key} className="flex gap-2">
-                            <dt className="shrink-0 font-medium text-zinc-500">{key}:</dt>
-                            <dd className="whitespace-pre-wrap">{value || "—"}</dd>
-                          </div>
-                        ))}
-                      </dl>
-                    ) : (
-                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-900">
-                        {current.item?.content || current.itemData || "(empty item — no text was stored for this task)"}
-                      </p>
-                    )}
+                    {(() => {
+                      // Answer/metadata columns are never rendered as item
+                      // content (the backend strips them too) — the annotator
+                      // only ever sees the feature columns to label.
+                      const rows = current.item
+                        ? visibleRowData(current.item.rowData, hiddenColumnsFor(active), active?.featureColumns)
+                        : [];
+                      return rows.length > 0 ? (
+                        <dl className="mt-2 space-y-1 text-sm leading-6 text-zinc-900">
+                          {rows.map(([key, value]) => (
+                            <div key={key} className="flex gap-2">
+                              <dt className="shrink-0 font-medium text-zinc-500">{key}:</dt>
+                              <dd className="whitespace-pre-wrap">{value || "—"}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      ) : (
+                        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-900">
+                          {current.item?.content || current.itemData || "(empty item — no text was stored for this task)"}
+                        </p>
+                      );
+                    })()}
                     {active && active.labels.length > 0 && (
                       <div className="mt-3 flex flex-wrap gap-1.5">
                         {active.labels.slice(0, 9).map((option, i) => (

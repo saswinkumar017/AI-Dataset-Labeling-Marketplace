@@ -2,7 +2,9 @@ package com.labelmate.labelmate.controller;
 
 import com.labelmate.labelmate.dto.DatasetItemResponse;
 import com.labelmate.labelmate.dto.DatasetItemsRequest;
+import com.labelmate.labelmate.dto.DatasetSchemaRequest;
 import com.labelmate.labelmate.dto.DatasetTableRequest;
+import com.labelmate.labelmate.dto.FeatureDef;
 import com.labelmate.labelmate.dto.TableIngestResult;
 import com.labelmate.labelmate.service.CsvTableParser;
 import com.labelmate.labelmate.service.DatasetItemService;
@@ -20,6 +22,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -88,6 +91,68 @@ public class DatasetItemController {
             @PathVariable Long datasetId, Authentication authentication) {
         List<String> columns = itemService.columns(datasetId, authentication.getName());
         return ResponseEntity.ok(Map.of("datasetId", datasetId, "columns", columns));
+    }
+
+    /**
+     * Returns the full typed feature schema: ordered columns, per-feature
+     * types, the dataset kind, and the ground-truth column hidden during
+     * labeling. Multi-feature text datasets are managed here.
+     */
+    @GetMapping("/{datasetId}/schema")
+    @Operation(summary = "Get typed feature schema of a dataset")
+    public ResponseEntity<Map<String, Object>> schema(
+            @PathVariable Long datasetId, Authentication authentication) {
+        List<String> columns = itemService.columns(datasetId, authentication.getName());
+        List<FeatureDef> features = itemService.features(datasetId, authentication.getName());
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("datasetId", datasetId);
+        body.put("columns", columns);
+        body.put("features", features);
+        return ResponseEntity.ok(body);
+    }
+
+    /**
+     * Replaces the typed feature schema, dataset kind, and ground-truth
+     * label column. New feature names join the header so multi-feature
+     * datasets can be declared before rows arrive; the label column must
+     * name an existing column and is hidden from labeling reads.
+     */
+    @PutMapping("/{datasetId}/schema")
+    @Operation(summary = "Update typed feature schema of a dataset")
+    public ResponseEntity<Map<String, Object>> updateSchema(
+            @PathVariable Long datasetId,
+            @Valid @RequestBody(required = false) DatasetSchemaRequest request,
+            Authentication authentication) {
+        DatasetSchemaRequest effective = request == null
+                ? new DatasetSchemaRequest(null, null, null)
+                : request;
+        List<FeatureDef> features = itemService.updateSchema(datasetId, effective, authentication.getName());
+        List<String> columns = itemService.columns(datasetId, authentication.getName());
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("datasetId", datasetId);
+        body.put("columns", columns);
+        body.put("features", features);
+        return ResponseEntity.ok(body);
+    }
+
+    /**
+     * Adds one named, typed feature column to a dataset header without
+     * ingesting rows — the entry point for building multi-feature text
+     * datasets column by column from the UI.
+     */
+    @PostMapping("/{datasetId}/feature-column")
+    @Operation(summary = "Add one typed feature column to a dataset")
+    public ResponseEntity<Map<String, Object>> addFeatureColumn(
+            @PathVariable Long datasetId,
+            @Valid @RequestBody FeatureDef feature,
+            Authentication authentication) {
+        List<FeatureDef> features = itemService.addFeatureColumn(datasetId, feature, authentication.getName());
+        List<String> columns = itemService.columns(datasetId, authentication.getName());
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("datasetId", datasetId);
+        body.put("columns", columns);
+        body.put("features", features);
+        return ResponseEntity.status(HttpStatus.CREATED).body(body);
     }
 
     /**

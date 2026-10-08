@@ -1,5 +1,6 @@
 package com.labelmate.labelmate.controller;
 
+import com.labelmate.labelmate.dto.ProjectLabelConfigRequest;
 import com.labelmate.labelmate.dto.ProjectRequest;
 import com.labelmate.labelmate.dto.ProjectResponse;
 import com.labelmate.labelmate.service.ProjectService;
@@ -66,6 +67,23 @@ public class ProjectController {
     public ResponseEntity<ProjectResponse> update(
             @PathVariable Long id, @Valid @RequestBody ProjectRequest request, Authentication authentication) {
         return ResponseEntity.ok(projectService.update(id, request, authentication.getName()));
+    }
+
+    /**
+     * Reconfigures which dataset columns a project labels — and which it
+     * hides. The label (answer) column is hidden from every labeling read
+     * so annotators never see the correct label before doing the work.
+     */
+    @PutMapping("/{id}/label-config")
+    @Operation(summary = "Update a project's label/feature column config")
+    public ResponseEntity<ProjectResponse> updateLabelConfig(
+            @PathVariable Long id,
+            @Valid @RequestBody(required = false) ProjectLabelConfigRequest request,
+            Authentication authentication) {
+        ProjectLabelConfigRequest effective = request == null
+                ? new ProjectLabelConfigRequest(null, null, null)
+                : request;
+        return ResponseEntity.ok(projectService.updateLabelConfig(id, effective, authentication.getName()));
     }
 
     /** Deletes one of the authenticated user's projects. */

@@ -48,6 +48,39 @@ public class Dataset {
     private String checksumSha256;
 
     /**
+     * Broad dataset kind driving the ingest/labeling UI: {@code TEXT} (one
+     * free-text feature per item), {@code TABULAR} (a CSV row with several
+     * named feature columns), {@code IMAGE} (pictures with optional
+     * captions), or {@code MIXED} (a combination added over time). Stored as
+     * free text (not an enum) so new kinds never need a migration; null
+     * means "unknown yet" and the UI infers it from the items present.
+     */
+    @Column(name = "dataset_type", length = 20)
+    private String datasetType;
+
+    /**
+     * Typed feature schema for multi-feature (multi-column) datasets, stored
+     * as a JSON array string, e.g.
+     * {@code [{"name":"review_title","type":"TEXT"},{"name":"price","type":"NUMBER"}]}.
+     * Supported types: TEXT, NUMBER, CATEGORY, BOOLEAN, IMAGE. Null/blank
+     * means untyped — every column behaves as TEXT. Entries are advisory
+     * (they drive input widgets and validation hints); ingest never rejects
+     * data for a type mismatch.
+     */
+    @Column(name = "features_json", columnDefinition = "TEXT")
+    private String featuresJson;
+
+    /**
+     * Name of the ground-truth (answer) column, if any — e.g. {@code "rating"}
+     * in a {@code [review_title, review_text, rating]} CSV. The column stays
+     * in storage and exports, but labeling reads (tasks, AI prompts, the
+     * workspace) must hide it so annotators never see the answer before
+     * labeling. Null/blank means the dataset carries no ground truth.
+     */
+    @Column(name = "label_column", length = 100)
+    private String labelColumn;
+
+    /**
      * Ordered column names for tabular (multi-column) datasets, stored as a
      * JSON array string, e.g. {@code ["review","rating"]}. Null/blank means a
      * single-content dataset where each item is free text (or an image) in
@@ -138,6 +171,30 @@ public class Dataset {
 
     public void setChecksumSha256(String checksumSha256) {
         this.checksumSha256 = checksumSha256;
+    }
+
+    public String getDatasetType() {
+        return datasetType;
+    }
+
+    public void setDatasetType(String datasetType) {
+        this.datasetType = datasetType;
+    }
+
+    public String getFeaturesJson() {
+        return featuresJson;
+    }
+
+    public void setFeaturesJson(String featuresJson) {
+        this.featuresJson = featuresJson;
+    }
+
+    public String getLabelColumn() {
+        return labelColumn;
+    }
+
+    public void setLabelColumn(String labelColumn) {
+        this.labelColumn = labelColumn;
     }
 
     public String getColumnsJson() {

@@ -70,6 +70,15 @@ export type AuthResponse = {
   user: BackendUser;
 };
 
+export type FeatureType = "TEXT" | "NUMBER" | "CATEGORY" | "BOOLEAN" | "IMAGE";
+
+export const FEATURE_TYPES: FeatureType[] = ["TEXT", "NUMBER", "CATEGORY", "BOOLEAN", "IMAGE"];
+
+export type FeatureDef = {
+  name: string;
+  type: FeatureType | string;
+};
+
 export type DatasetResponse = {
   id: number;
   name: string;
@@ -80,6 +89,12 @@ export type DatasetResponse = {
   fileSizeBytes: number | null;
   checksumSha256: string | null;
   columns: string[];
+  /** Typed multi-feature schema (empty = untyped, every column behaves as TEXT). */
+  features: FeatureDef[];
+  /** Broad kind: TEXT, TABULAR, IMAGE, MIXED, or null when unknown. */
+  datasetType: string | null;
+  /** Ground-truth column hidden from labeling reads (null = none). */
+  labelColumn: string | null;
   itemCount: number;
   createdAt: string;
   updatedAt: string | null;
@@ -92,6 +107,12 @@ export type ProjectResponse = {
   instructions: string | null;
   labelType: string | null;
   labels: string[];
+  /** Answer column hidden from labeling reads (falls back to the dataset's). */
+  labelColumn: string | null;
+  /** Explicit feature allowlist (empty = all non-hidden columns). */
+  featureColumns: string[];
+  /** Extra columns hidden from labeling reads (ids, metadata). */
+  hiddenColumns: string[];
   status: "DRAFT" | "IN_PROGRESS" | "COMPLETED";
   totalTasks: number;
   pendingTasks: number;
@@ -108,6 +129,9 @@ export type ProjectPayload = {
   instructions?: string | null;
   labelType?: string | null;
   labels?: string[] | null;
+  labelColumn?: string | null;
+  featureColumns?: string[] | null;
+  hiddenColumns?: string[] | null;
 };
 
 export async function registerRequest(username: string, email: string, password: string) {
@@ -251,6 +275,76 @@ export async function getDatasetColumns(datasetId: number) {
     `/api/datasets/${datasetId}/columns`
   );
   return res.data;
+}
+
+export type DatasetSchema = {
+  datasetId: number;
+  columns: string[];
+  features: FeatureDef[];
+};
+
+export async function getDatasetSchema(datasetId: number) {
+  const res = await api.get<DatasetSchema>(`/api/datasets/${datasetId}/schema`);
+  return res.data;
+}
+
+export async function updateDatasetSchema(
+  datasetId: number,
+  data: { datasetType?: string | null; features?: FeatureDef[] | null; labelColumn?: string | null }
+) {
+  const res = await api.put<DatasetSchema>(`/api/datasets/${datasetId}/schema`, data);
+  return res.data;
+}
+
+export async function addFeatureColumn(datasetId: number, data: { name: string; type?: string }) {
+  const res = await api.post<DatasetSchema>(`/api/datasets/${datasetId}/feature-column`, data);
+  return res.data;
+}
+
+export async function updateProjectLabelConfig(
+  projectId: number,
+  data: { labelColumn?: string | null; featureColumns?: string[] | null; hiddenColumns?: string[] | null }
+) {
+  const res = await api.put<ProjectResponse>(`/api/projects/${projectId}/label-config`, data);
+  return res.data;
+}
+
+/**
+ * Hidden columns for labeling reads (case-insensitive): the project's
+ * answer column, the dataset's answer column, plus extra hidden columns.
+ * The backend already strips these from task items — this is
+ * defense-in-depth so the UI never renders a ground-truth answer even if a
+ * stale cached response still carries it.
+ */
+export function hiddenColumnsFor(
+  project: Pick<ProjectResponse, "labelColumn" | "hiddenColumns"> | null,
+  dataset?: Pick<DatasetResponse, "labelColumn"> | null
+): Set<string> {
+  const hidden = new Set<string>();
+  const add = (name: string | null | undefined) => {
+    if (name && name.trim()) hidden.add(name.trim().toLowerCase());
+  };
+  add(project?.labelColumn);
+  project?.hiddenColumns?.forEach(add);
+  add(dataset?.labelColumn);
+  return hidden;
+}
+
+/** Row entries with every hidden (answer/metadata) column removed, order-preserving. */
+export function visibleRowData(
+  rowData: Record<string, string> | null | undefined,
+  hidden: Set<string>,
+  featureColumns?: string[] | null
+): Array<[string, string]> {
+  if (!rowData) return [];
+  const allow =
+    featureColumns && featureColumns.length > 0
+      ? new Set(featureColumns.map((c) => c.toLowerCase()))
+      : null;
+  return Object.entries(rowData).filter(
+    ([key]) =>
+      !hidden.has(key.toLowerCase()) && (allow === null || allow.has(key.toLowerCase()))
+  );
 }
 
 export async function addTableRows(

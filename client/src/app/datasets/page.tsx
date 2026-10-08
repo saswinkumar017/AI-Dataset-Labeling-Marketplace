@@ -5,7 +5,7 @@ import AppShell from "@/components/AppShell";
 import Card from "@/components/Card";
 import Badge from "@/components/Badge";
 import RequireAuth from "@/components/RequireAuth";
-import { addDatasetItems, apiBaseUrl, createDataset, deleteDataset, friendlyDatasetError, getDatasetColumns, listDatasetItemsPaged, listDatasets, updateDataset, uploadDatasetFile, uploadDatasetImages, uploadTableCsv, type DatasetItemResponse, type DatasetResponse, type PagedResponse } from "@/lib/api";
+import { addDatasetItems, addFeatureColumn, addTableRows, apiBaseUrl, createDataset, deleteDataset, friendlyDatasetError, getDatasetColumns, getDatasetSchema, listDatasetItemsPaged, listDatasets, updateDataset, updateDatasetSchema, uploadDatasetFile, uploadDatasetImages, uploadTableCsv, type DatasetItemResponse, type DatasetResponse, type FeatureDef, type FeatureType, type PagedResponse, FEATURE_TYPES } from "@/lib/api";
 
 type FormState = {
   name: string;
@@ -35,11 +35,54 @@ export default function DatasetsPage() {
   const [ingestBusy, setIngestBusy] = useState(false);
   const [ingestNotice, setIngestNotice] = useState<string | null>(null);
   const [ingestColumns, setIngestColumns] = useState<string[]>([]);
+  const [ingestFeatures, setIngestFeatures] = useState<FeatureDef[]>([]);
+  const [labelColumn, setLabelColumn] = useState<string | null>(null);
+  const [datasetType, setDatasetType] = useState<string | null>(null);
+  const [newFeatureName, setNewFeatureName] = useState("");
+  const [newFeatureType, setNewFeatureType] = useState<FeatureType>("TEXT");
+  const [schemaBusy, setSchemaBusy] = useState(false);
+  const [rowComposer, setRowComposer] = useState<Record<string, string>>({});
   const [itemsPage, setItemsPage] = useState(0);
   const [itemsData, setItemsData] = useState<PagedResponse<DatasetItemResponse> | null>(null);
   const [itemsLoading, setItemsLoading] = useState(false);
 
   const ITEMS_PAGE_SIZE = 10;
+
+  /** One-click multi-feature text CSV templates (columns + example rows). */
+  const TEMPLATES: Array<{ name: string; blurb: string; columns: string[]; rows: Record<string, string>[] }> = [
+    {
+      name: "Sentiment reviews",
+      blurb: "Title + body as features, rating kept as the hidden answer column.",
+      columns: ["review_title", "review_text", "rating"],
+      rows: [
+        { review_title: "Loved it", review_text: "The battery lasts two days and the screen is gorgeous.", rating: "Positive" },
+        { review_title: "Meh", review_text: "It works, but the setup took forever and support was slow.", rating: "Neutral" },
+        { review_title: "Do not buy", review_text: "Arrived broken and the refund process was a nightmare.", rating: "Negative" },
+      ],
+    },
+    {
+      name: "Product feedback",
+      blurb: "Name, description, price and category as four labeling features.",
+      columns: ["product_name", "description", "price", "category"],
+      rows: [
+        { product_name: "Trail Backpack 40L", description: "Padded straps, rain cover included, fits a 15-inch laptop.", price: "89", category: "Outdoor" },
+        { product_name: "Ceramic Pour-Over Set", description: "Even extraction, dishwasher-safe dripper and carafe.", price: "45", category: "Kitchen" },
+      ],
+    },
+    {
+      name: "Support tickets",
+      blurb: "Subject + message + priority for urgency classification.",
+      columns: ["subject", "message", "priority"],
+      rows: [
+        { subject: "Login fails on Safari", message: "Getting a blank page after SSO redirect since yesterday.", priority: "High" },
+        { subject: "Dark mode request", message: "Would love a dark theme for the dashboard.", priority: "Low" },
+      ],
+    },
+  ];
+
+  function featureTypeOf(column: string): string {
+    return ingestFeatures.find((f) => f.name.toLowerCase() === column.toLowerCase())?.type ?? "TEXT";
+  }
 
   async function openIngest(dataset: DatasetResponse) {
     if (ingestOpenId === dataset.id) {
@@ -52,15 +95,29 @@ export default function DatasetsPage() {
     setItemsPage(0);
     setItemsData(null);
     setIngestColumns(dataset.columns ?? []);
+    setIngestFeatures(dataset.features ?? []);
+    setLabelColumn(dataset.labelColumn ?? null);
+    setDatasetType(dataset.datasetType ?? null);
+    setRowComposer({});
+    setNewFeatureName("");
     setError(null);
     setItemsLoading(true);
     try {
-      const [page, cols] = await Promise.all([
+      const [page, schema] = await Promise.all([
         listDatasetItemsPaged(dataset.id, 0, ITEMS_PAGE_SIZE),
-        getDatasetColumns(dataset.id).catch(() => ({ datasetId: dataset.id, columns: dataset.columns ?? [] })),
+        getDatasetSchema(dataset.id).catch(() => null),
       ]);
       setItemsData(page);
-      setIngestColumns(cols.columns);
+      if (schema) {
+        setIngestColumns(schema.columns);
+        setIngestFeatures(schema.features);
+      }
+      try {
+        const cols = await getDatasetColumns(dataset.id).catch(() => null);
+        if (cols) setIngestColumns(cols.columns);
+      } catch {
+        // columns already set from the dataset record / schema above.
+      }
     } catch (err) {
       setError(friendlyDatasetError(err));
     } finally {
@@ -83,17 +140,25 @@ export default function DatasetsPage() {
 
   async function refreshIngest(dataset: DatasetResponse) {
     try {
-      const [page, cols, all] = await Promise.all([
+      const [page, schema, all] = await Promise.all([
         listDatasetItemsPaged(dataset.id, itemsPage, ITEMS_PAGE_SIZE).catch(() => null),
-        getDatasetColumns(dataset.id).catch(() => null),
+        getDatasetSchema(dataset.id).catch(() => null),
         listDatasets().catch(() => null),
       ]);
       if (page) setItemsData(page);
-      if (cols) setIngestColumns(cols.columns);
+      if (schema) {
+        setIngestColumns(schema.columns);
+        setIngestFeatures(schema.features);
+      }
       if (all) {
         setDatasets(all);
         const updated = all.find((d) => d.id === dataset.id);
-        if (updated) setIngestColumns(updated.columns ?? cols?.columns ?? []);
+        if (updated) {
+          setIngestColumns(updated.columns ?? schema?.columns ?? []);
+          setIngestFeatures(updated.features ?? schema?.features ?? []);
+          setLabelColumn(updated.labelColumn ?? null);
+          setDatasetType(updated.datasetType ?? null);
+        }
       }
     } catch {
       // Best-effort refresh; the explicit notices below carry the outcome.
@@ -144,6 +209,114 @@ export default function DatasetsPage() {
     try {
       const saved = await uploadDatasetImages(dataset.id, files.slice(0, 20));
       setIngestNotice(`${saved.length} image${saved.length === 1 ? "" : "s"} added.`);
+      await refreshIngest(dataset);
+    } catch (err) {
+      setError(friendlyDatasetError(err));
+    } finally {
+      setIngestBusy(false);
+    }
+  }
+
+  async function onAddFeatureColumn(dataset: DatasetResponse) {
+    const name = newFeatureName.trim();
+    if (!name || schemaBusy) return;
+    setSchemaBusy(true);
+    setError(null);
+    try {
+      const schema = await addFeatureColumn(dataset.id, { name, type: newFeatureType });
+      setIngestColumns(schema.columns);
+      setIngestFeatures(schema.features);
+      setNewFeatureName("");
+      setIngestNotice(`Feature “${name}” (${newFeatureType}) added — fill it per row below or via CSV.`);
+      await refreshIngest(dataset);
+    } catch (err) {
+      setError(friendlyDatasetError(err));
+    } finally {
+      setSchemaBusy(false);
+    }
+  }
+
+  async function onFeatureTypeChange(dataset: DatasetResponse, column: string, type: string) {
+    if (schemaBusy) return;
+    setSchemaBusy(true);
+    setError(null);
+    try {
+      const features = ingestColumns.map((c) => ({
+        name: c,
+        type: c.toLowerCase() === column.toLowerCase() ? type : featureTypeOf(c),
+      }));
+      const schema = await updateDatasetSchema(dataset.id, { features });
+      setIngestFeatures(schema.features);
+    } catch (err) {
+      setError(friendlyDatasetError(err));
+    } finally {
+      setSchemaBusy(false);
+    }
+  }
+
+  async function onLabelColumnChange(dataset: DatasetResponse, value: string) {
+    if (schemaBusy) return;
+    setSchemaBusy(true);
+    setError(null);
+    try {
+      await updateDatasetSchema(dataset.id, { labelColumn: value || null });
+      setLabelColumn(value || null);
+      setIngestNotice(
+        value
+          ? `“${value}” is now the answer column — annotators will not see it while labeling.`
+          : "Answer column cleared — every column is shown while labeling."
+      );
+      await refreshIngest(dataset);
+    } catch (err) {
+      setError(friendlyDatasetError(err));
+    } finally {
+      setSchemaBusy(false);
+    }
+  }
+
+  async function onAddMultiFeatureRow(dataset: DatasetResponse) {
+    if (ingestBusy || ingestColumns.length === 0) return;
+    const row: Record<string, string> = {};
+    let filled = 0;
+    for (const column of ingestColumns) {
+      const value = (rowComposer[column] ?? "").trim();
+      row[column] = value;
+      if (value) filled++;
+    }
+    if (filled === 0) return;
+    setIngestBusy(true);
+    setIngestNotice(null);
+    setError(null);
+    try {
+      const result = await addTableRows(dataset.id, { columns: ingestColumns, rows: [row] });
+      setRowComposer({});
+      setIngestNotice(`Row added (${result.totalItems} total). Columns: ${result.columns.join(", ")}`);
+      await refreshIngest(dataset);
+    } catch (err) {
+      setError(friendlyDatasetError(err));
+    } finally {
+      setIngestBusy(false);
+    }
+  }
+
+  async function onLoadTemplate(dataset: DatasetResponse, templateIndex: number) {
+    const template = TEMPLATES[templateIndex];
+    if (!template || ingestBusy) return;
+    setIngestBusy(true);
+    setIngestNotice(null);
+    setError(null);
+    try {
+      const result = await addTableRows(dataset.id, { columns: template.columns, rows: template.rows });
+      // Templates that ship an answer column mark it hidden from labeling.
+      const answer = template.columns.find((c) => ["rating", "label", "sentiment", "priority", "category"].includes(c.toLowerCase()));
+      if (template.name === "Sentiment reviews") {
+        await updateDatasetSchema(dataset.id, { labelColumn: "rating" }).catch(() => null);
+        setLabelColumn("rating");
+      } else if (answer && template.name === "Support tickets") {
+        await updateDatasetSchema(dataset.id, { labelColumn: "priority" }).catch(() => null);
+        setLabelColumn("priority");
+      }
+      setIngestNotice(`${template.name}: ${result.inserted} row${result.inserted === 1 ? "" : "s"} added (${result.totalItems} total).`);
       await refreshIngest(dataset);
     } catch (err) {
       setError(friendlyDatasetError(err));
@@ -376,6 +549,21 @@ export default function DatasetsPage() {
                       <div className="text-sm font-semibold text-zinc-900">{d.name}</div>
                       <div className="text-xs text-zinc-500">{d.status} · {d.itemCount} item{d.itemCount === 1 ? "" : "s"} · {new Date(d.createdAt).toLocaleDateString()}</div>
                       {d.description && <div className="mt-1 text-xs text-zinc-600 line-clamp-2">{d.description}</div>}
+                      <div className="mt-1 flex flex-wrap gap-1.5 text-xs">
+                        {d.datasetType && (
+                          <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-zinc-600 ring-1 ring-zinc-200">{d.datasetType}</span>
+                        )}
+                        {d.columns.length > 0 ? (
+                          <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700 ring-1 ring-indigo-200">
+                            {d.columns.length} feature{d.columns.length === 1 ? "" : "s"}: {d.columns.slice(0, 3).join(", ")}{d.columns.length > 3 ? "…" : ""}
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-zinc-500 ring-1 ring-zinc-200">single-text</span>
+                        )}
+                        {d.labelColumn && (
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-700 ring-1 ring-amber-200">answer: {d.labelColumn} (hidden)</span>
+                        )}
+                      </div>
                     </div>
                     <Badge tone="emerald">{d.status}</Badge>
                   </div>
@@ -431,12 +619,151 @@ export default function DatasetsPage() {
                           </Link>
                         </div>
                       )}
-                      {ingestColumns.length > 0 && (
+                      {ingestColumns.length > 0 ? (
                         <div>
-                          <span className="font-semibold text-zinc-900">Columns: </span>
-                          <span className="text-zinc-600">{ingestColumns.join(", ")}</span>
+                          <span className="font-semibold text-zinc-900">
+                            Features ({ingestColumns.length}){datasetType ? ` · ${datasetType}` : ""}
+                          </span>
+                          <ul className="mt-1 space-y-1">
+                            {ingestColumns.map((column) => (
+                              <li key={column} className="flex flex-wrap items-center gap-2 rounded-lg border border-zinc-200 bg-white px-2 py-1">
+                                <span className="font-medium text-zinc-900">{column}</span>
+                                {labelColumn?.toLowerCase() === column.toLowerCase() ? (
+                                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700 ring-1 ring-amber-200">
+                                    answer — hidden while labeling
+                                  </span>
+                                ) : (
+                                  <select
+                                    value={featureTypeOf(column)}
+                                    onChange={(e) => void onFeatureTypeChange(d, column, e.target.value)}
+                                    disabled={schemaBusy}
+                                    title={`Type of the ${column} feature`}
+                                    className="rounded-full border border-zinc-200 px-2 py-0.5 text-xs text-zinc-600 outline-none focus:border-zinc-900 disabled:opacity-40"
+                                  >
+                                    {FEATURE_TYPES.map((t) => (
+                                      <option key={t} value={t}>{t}</option>
+                                    ))}
+                                  </select>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <label className="text-zinc-600">
+                              Answer column (hidden while labeling):
+                              <select
+                                value={labelColumn ?? ""}
+                                onChange={(e) => void onLabelColumnChange(d, e.target.value)}
+                                disabled={schemaBusy}
+                                className="ml-2 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs outline-none focus:border-zinc-900 disabled:opacity-40"
+                              >
+                                <option value="">None — show everything</option>
+                                {ingestColumns.map((column) => (
+                                  <option key={column} value={column}>{column}</option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <input
+                              value={newFeatureName}
+                              onChange={(e) => setNewFeatureName(e.target.value)}
+                              placeholder="New feature name, e.g. review_title"
+                              maxLength={100}
+                              className="w-48 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs outline-none focus:border-zinc-900"
+                            />
+                            <select
+                              value={newFeatureType}
+                              onChange={(e) => setNewFeatureType(e.target.value as FeatureType)}
+                              className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs outline-none focus:border-zinc-900"
+                            >
+                              {FEATURE_TYPES.map((t) => (
+                                <option key={t} value={t}>{t}</option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => void onAddFeatureColumn(d)}
+                              disabled={schemaBusy || newFeatureName.trim().length === 0}
+                              className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs hover:bg-zinc-50 disabled:opacity-40"
+                            >
+                              {schemaBusy ? "Saving…" : "Add feature"}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <span className="font-semibold text-zinc-900">Features</span>
+                          <span className="text-zinc-500"> — single-text dataset. Add a feature below or upload a multi-column CSV to go multi-feature.</span>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <input
+                              value={newFeatureName}
+                              onChange={(e) => setNewFeatureName(e.target.value)}
+                              placeholder="New feature name, e.g. review_title"
+                              maxLength={100}
+                              className="w-48 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs outline-none focus:border-zinc-900"
+                            />
+                            <select
+                              value={newFeatureType}
+                              onChange={(e) => setNewFeatureType(e.target.value as FeatureType)}
+                              className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs outline-none focus:border-zinc-900"
+                            >
+                              {FEATURE_TYPES.map((t) => (
+                                <option key={t} value={t}>{t}</option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => void onAddFeatureColumn(d)}
+                              disabled={schemaBusy || newFeatureName.trim().length === 0}
+                              className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs hover:bg-zinc-50 disabled:opacity-40"
+                            >
+                              {schemaBusy ? "Saving…" : "Add feature"}
+                            </button>
+                          </div>
                         </div>
                       )}
+                      {ingestColumns.length > 0 && (
+                        <div>
+                          <div className="font-semibold text-zinc-900">Add one multi-feature row</div>
+                          <p className="text-zinc-500">Fill any subset of the features — one row per click.</p>
+                          <div className="mt-1 space-y-1">
+                            {ingestColumns.map((column) => (
+                              <label key={column} className="flex items-center gap-2">
+                                <span className="w-32 shrink-0 truncate font-medium text-zinc-700">{column}</span>
+                                <input
+                                  value={rowComposer[column] ?? ""}
+                                  onChange={(e) => setRowComposer((prev) => ({ ...prev, [column]: e.target.value }))}
+                                  placeholder={`${featureTypeOf(column).toLowerCase()}…`}
+                                  maxLength={8000}
+                                  className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs outline-none focus:border-zinc-900"
+                                />
+                              </label>
+                            ))}
+                          </div>
+                          <button
+                            onClick={() => void onAddMultiFeatureRow(d)}
+                            disabled={ingestBusy}
+                            className={`mt-1 rounded-full px-4 py-1.5 text-xs font-medium text-white ${ingestBusy ? "bg-zinc-400" : "bg-zinc-900 hover:bg-zinc-800"}`}
+                          >
+                            {ingestBusy ? "Adding…" : "Add row"}
+                          </button>
+                        </div>
+                      )}
+                      <div>
+                        <div className="font-semibold text-zinc-900">Start from a multi-feature template</div>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {TEMPLATES.map((template, i) => (
+                            <button
+                              key={template.name}
+                              onClick={() => void onLoadTemplate(d, i)}
+                              disabled={ingestBusy}
+                              title={template.blurb}
+                              className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs text-indigo-700 hover:bg-indigo-100 disabled:opacity-40"
+                            >
+                              {template.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       <div>
                         <div className="font-semibold text-zinc-900">Text items (one per line)</div>
                         <textarea

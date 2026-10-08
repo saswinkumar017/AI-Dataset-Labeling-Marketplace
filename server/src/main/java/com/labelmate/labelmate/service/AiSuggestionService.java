@@ -65,6 +65,22 @@ public class AiSuggestionService {
     }
 
     /**
+     * Prompt-safe item text: visible feature columns only, so the model never
+     * sees the ground-truth answer column hiding in the dataset row. Tasks
+     * without a linked dataset item fall back to their free-text snapshot.
+     */
+    private String promptText(Task task) {
+        if (task.getDatasetItem() != null) {
+            String visible = LabelVisibility.renderVisibleItem(
+                    task.getDatasetItem(), task.getProject(), task.getDataset());
+            if (!visible.isBlank()) {
+                return visible;
+            }
+        }
+        return task.getItemData() == null ? "" : task.getItemData();
+    }
+
+    /**
      * Generates and stores one suggestion for a task visible to the caller.
      */
     @Transactional
@@ -82,12 +98,18 @@ public class AiSuggestionService {
         if (task.getItemData() == null || task.getItemData().isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Task has no text to suggest from");
         }
+        // Visible features only: the model must never see the ground-truth
+        // answer column hiding in the dataset row.
+        String promptText = promptText(task);
+        if (promptText.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Task has no text to suggest from");
+        }
         List<String> scheme = request.labels().stream()
                 .filter(label -> label != null && !label.isBlank())
                 .map(String::strip)
                 .toList();
         SuggestionResult result = suggestionService.suggest(
-                task.getItemData(), scheme, task.getProject().getInstructions());
+                promptText, scheme, task.getProject().getInstructions());
 
         AiSuggestion suggestion = new AiSuggestion(task, LocalDateTime.now());
         suggestion.setSuggestedLabelName(result.suggestedLabel());
@@ -132,10 +154,16 @@ public class AiSuggestionService {
         if (scheme.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Project has no labels");
         }
+        // Visible features only: the model must never see the ground-truth
+        // answer column hiding in the dataset row.
+        String promptText = promptText(task);
+        if (promptText.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Task has no text to label");
+        }
         SuggestionResult result;
         try {
             result = suggestionService.suggest(
-                    task.getItemData(), scheme, task.getProject().getInstructions());
+                    promptText, scheme, task.getProject().getInstructions());
         } catch (IllegalArgumentException ex) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ex.getMessage());
         }

@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
+import java.util.List;
 
 public record DatasetRequest(
         @NotBlank(message = "name is required")
@@ -25,9 +26,30 @@ public record DatasetRequest(
         Long fileSizeBytes,
 
         @Pattern(regexp = "^[0-9a-f]{64}$", message = "checksumSha256 must be 64 lowercase hex characters")
-        String checksumSha256) {
+        String checksumSha256,
+
+        @Pattern(regexp = "^(?i)(TEXT|TABULAR|IMAGE|MIXED)?$",
+                message = "datasetType must be one of TEXT, TABULAR, IMAGE, MIXED")
+        String datasetType,
+
+        @Size(max = 100, message = "provide at most 100 features")
+        List<FeatureDef> features,
+
+        @Size(max = 100, message = "labelColumn must be at most 100 characters")
+        String labelColumn) {
 
     public DatasetRequest(String name, String description) {
-        this(name, description, null, null, null, null);
+        this(name, description, null, null, null, null, null, null, null);
+    }
+
+    /** Compatibility for callers built before typed features existed. */
+    public DatasetRequest(
+            String name,
+            String description,
+            String fileName,
+            String filePath,
+            Long fileSizeBytes,
+            String checksumSha256) {
+        this(name, description, fileName, filePath, fileSizeBytes, checksumSha256, null, null, null);
     }
 }

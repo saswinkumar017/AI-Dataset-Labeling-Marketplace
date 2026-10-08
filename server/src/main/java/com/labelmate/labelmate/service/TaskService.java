@@ -4,7 +4,9 @@ import com.labelmate.labelmate.dto.TaskAssignRequest;
 import com.labelmate.labelmate.dto.TaskBulkRequest;
 import com.labelmate.labelmate.dto.TaskRequest;
 import com.labelmate.labelmate.dto.TaskResponse;
+import com.labelmate.labelmate.dto.DatasetItemResponse;
 import com.labelmate.labelmate.exception.ApiException;
+import com.labelmate.labelmate.model.Dataset;
 import com.labelmate.labelmate.model.DatasetItem;
 import com.labelmate.labelmate.model.Project;
 import com.labelmate.labelmate.model.Role;
@@ -145,12 +147,12 @@ public class TaskService {
                 }
                 Task task = new Task(project, project.getDataset(), TaskStatus.PENDING, LocalDateTime.now());
                 task.setDatasetItem(item);
-                task.setItemData(snapshotItemText(item));
+                task.setItemData(snapshotVisibleItemText(item, project, project.getDataset()));
                 task.setItemIndex(nextIndex++);
                 batch.add(task);
             }
             if (!batch.isEmpty()) {
-                created.addAll(tasks.saveAll(batch).stream().map(TaskResponse::from).toList());
+                created.addAll(tasks.saveAll(batch).stream().map(this::toVisibleResponse).toList());
             }
             if (!slice.hasNext()) {
                 break;
@@ -161,11 +163,86 @@ public class TaskService {
     }
 
     private String snapshotItemText(DatasetItem item) {
+        // Project/dataset are unknown here; callers that know them use the
+        // LabelVisibility overload so ground-truth columns never snapshot.
         String rendered = datasetItemService.renderItemForLabeling(item);
         if (rendered.length() > 5000) {
             return rendered.substring(0, 5000);
         }
         return rendered;
+    }
+
+    private String snapshotVisibleItemText(DatasetItem item, Project project, Dataset dataset) {
+        String rendered = LabelVisibility.renderVisibleItem(item, project, dataset);
+        if (rendered.length() > 5000) {
+            return rendered.substring(0, 5000);
+        }
+        return rendered;
+    }
+
+    /**
+     * Labeling-safe view of a task: the linked dataset item with every hidden
+     * (label/ground-truth) column removed, and {@code itemData} rebuilt from
+     * the visible columns only. Rebuilding (rather than returning the stored
+     * snapshot) also repairs tasks generated before a label column was
+     * configured — no migration needed. Manual tasks without a dataset item
+     * keep their free-text {@code itemData} untouched.
+     */
+    private TaskResponse toVisibleResponse(Task task) {
+        Project project = task.getProject();
+        Dataset dataset = task.getDataset() != null ? task.getDataset()
+                : (project != null ? project.getDataset() : null);
+        DatasetItem item = task.getDatasetItem();
+        if (item == null) {
+            return TaskResponse.from(task);
+        }
+        java.util.Set<String> hidden = LabelVisibility.hiddenColumns(project, dataset);
+        java.util.Map<String, String> row = DatasetItemResponse.parseRowData(item.getRowDataJson());
+        java.util.Map<String, String> filtered = LabelVisibility.filterRowData(row, hidden);
+        java.util.List<String> allowlist = project != null
+                ? DatasetItemResponse.parseColumns(project.getFeatureColumnsJson())
+                : java.util.List.of();
+        if (!allowlist.isEmpty()) {
+            java.util.Set<String> allowedLower = new java.util.LinkedHashSet<>();
+            for (String name : allowlist) {
+                if (name != null && !name.isBlank()) {
+                    allowedLower.add(name.strip().toLowerCase());
+                }
+            }
+            filtered.keySet().removeIf(key -> !allowedLower.contains(key.toLowerCase()));
+        }
+        DatasetItemResponse visibleItem = DatasetItemResponse.from(item).withRowData(filtered);
+        String visibleText = snapshotVisibleItemText(item, project, dataset);
+        return new TaskResponse(
+                task.getId(),
+                project != null ? project.getId() : null,
+                dataset != null ? dataset.getId() : null,
+                task.getItemIndex(),
+                visibleText,
+                task.getStatus(),
+                task.getAssignedTo() != null ? task.getAssignedTo().getId() : null,
+                task.getAssignedTo() != null ? task.getAssignedTo().getEmail() : null,
+                project != null ? project.getName() : null,
+                visibleItem,
+                task.getCreatedAt(),
+                task.getUpdatedAt());
+    }
+
+    /**
+     * Prompt-safe item text for AI suggest/auto-label: visible feature
+     * columns only, so the model never sees the ground-truth answer.
+     */
+    public String visibleItemText(Task task) {
+        if (task == null) {
+            return "";
+        }
+        if (task.getDatasetItem() != null) {
+            return snapshotVisibleItemText(
+                    task.getDatasetItem(), task.getProject(),
+                    task.getDataset() != null ? task.getDataset()
+                            : (task.getProject() != null ? task.getProject().getDataset() : null));
+        }
+        return task.getItemData() == null ? "" : task.getItemData();
     }
 
     /**
@@ -178,7 +255,7 @@ public class TaskService {
         List<Task> found = status == null
                 ? tasks.findByProjectIdOrderByItemIndexAscIdAsc(project.getId())
                 : tasks.findByProjectIdAndStatusOrderByItemIndexAscIdAsc(project.getId(), status);
-        return found.stream().map(TaskResponse::from).toList();
+        return found.stream().map(this::toVisibleResponse).toList();
     }
 
     /**
@@ -187,7 +264,7 @@ public class TaskService {
      */
     @Transactional(readOnly = true)
     public TaskResponse getTask(Long taskId, String userEmail) {
-        return TaskResponse.from(loadVisibleTask(taskId, loadUser(userEmail)));
+        return toVisibleResponse(loadVisibleTask(taskId, loadUser(userEmail)));
     }
 
     /**
@@ -198,7 +275,7 @@ public class TaskService {
     public List<TaskResponse> listAssigned(String userEmail) {
         User user = loadUser(userEmail);
         return tasks.findByAssignedToIdOrderByIdAsc(user.getId()).stream()
-                .map(TaskResponse::from)
+                .map(this::toVisibleResponse)
                 .toList();
     }
 
@@ -226,7 +303,7 @@ public class TaskService {
             task.setStatus(TaskStatus.ASSIGNED);
         }
         task.setUpdatedAt(LocalDateTime.now());
-        return TaskResponse.from(tasks.save(task));
+        return toVisibleResponse(tasks.save(task));
     }
 
     /**
@@ -251,7 +328,7 @@ public class TaskService {
             default -> throw new ApiException(
                     HttpStatus.CONFLICT, "Task cannot be started from status " + task.getStatus());
         }
-        return TaskResponse.from(tasks.save(task));
+        return toVisibleResponse(tasks.save(task));
     }
 
     /**
@@ -273,7 +350,7 @@ public class TaskService {
         }
         task.setStatus(TaskStatus.SUBMITTED);
         task.setUpdatedAt(LocalDateTime.now());
-        return TaskResponse.from(tasks.save(task));
+        return toVisibleResponse(tasks.save(task));
     }
 
     private boolean isOwner(Task task, User user) {

@@ -16,12 +16,16 @@ import {
   friendlyExportError,
   friendlyProjectError,
   friendlyReviewError,
+  getDatasetColumns,
   getProject,
+  hiddenColumnsFor,
   listAssignedTasks,
   listProjectAnnotations,
   listProjectReviews,
   listProjectTasks,
   submitReview,
+  updateProjectLabelConfig,
+  visibleRowData,
   type AnnotationResponse,
   type ProjectResponse,
   type ReviewDecision,
@@ -66,6 +70,11 @@ export default function ProjectDetailPage() {
   const [exporting, setExporting] = useState<"json" | "csv" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [datasetColumns, setDatasetColumns] = useState<string[]>([]);
+  const [labelColumnDraft, setLabelColumnDraft] = useState("");
+  const [featureDraft, setFeatureDraft] = useState<string[]>([]);
+  const [configOpen, setConfigOpen] = useState(false);
+  const [configBusy, setConfigBusy] = useState(false);
 
   const validId = Number.isInteger(projectId) && projectId > 0;
 
@@ -92,6 +101,14 @@ export default function ProjectDetailPage() {
       ]);
       setAnnotations(allAnnotations);
       setReviews(allReviews);
+      try {
+        const cols = await getDatasetColumns(loaded.datasetId);
+        setDatasetColumns(cols.columns);
+      } catch {
+        setDatasetColumns([]);
+      }
+      setLabelColumnDraft(loaded.labelColumn ?? "");
+      setFeatureDraft(loaded.featureColumns ?? []);
     } catch (err) {
       setError(friendlyProjectError(err));
     } finally {
@@ -129,12 +146,23 @@ export default function ProjectDetailPage() {
       setTasks(queue);
       setAnnotations(allAnnotations);
       setReviews(allReviews);
+      try {
+        const cols = await getDatasetColumns(loaded.datasetId);
+        setDatasetColumns(cols.columns);
+      } catch {
+        setDatasetColumns([]);
+      }
+      setLabelColumnDraft(loaded.labelColumn ?? "");
+      setFeatureDraft(loaded.featureColumns ?? []);
     } catch (err) {
       setError(friendlyProjectError(err));
     }
   }
 
   const reviewedIds = new Set(reviews.map((r) => r.annotationId));
+  /** Answer/metadata columns never rendered as item content (backend strips
+   * them too — this keeps stale cached items from leaking the answer). */
+  const hidden = hiddenColumnsFor(project);
   const visibleTasks = filter === "ALL" ? tasks : tasks.filter((t) => t.status === filter);
   const verified = annotations.filter((a) => a.source === "HUMAN_APPROVED");
   const approvedRate =
@@ -241,8 +269,31 @@ export default function ProjectDetailPage() {
     }
   }
 
-  async function onExport(format: "json" | "csv") {
-    if (exporting !== null || !validId) return;
+  async function onSaveLabelConfig() {
+    if (!validId || configBusy) return;
+    setConfigBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const updated = await updateProjectLabelConfig(projectId, {
+        labelColumn: labelColumnDraft.trim() || null,
+        featureColumns: featureDraft.length > 0 ? featureDraft : null,
+      });
+      setProject(updated);
+      setNotice(
+        updated.labelColumn
+          ? `Answer column “${updated.labelColumn}” is now hidden from annotators — the queue below no longer shows it.`
+          : "Answer column cleared — every feature column is shown while labeling."
+      );
+      await refresh();
+    } catch (err) {
+      setError(friendlyProjectError(err));
+    } finally {
+      setConfigBusy(false);
+    }
+  }
+
+  async function onExport(format: "json" | "csv") {    if (exporting !== null || !validId) return;
     setExporting(format);
     setError(null);
     try {
@@ -336,6 +387,86 @@ export default function ProjectDetailPage() {
               </div>
             </Card>
 
+            {(project.labelColumn || datasetColumns.length > 0) && (
+              <Card className="mt-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm font-semibold text-zinc-900">
+                    Labeling columns
+                    {project.labelColumn && (
+                      <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-normal text-amber-700 ring-1 ring-amber-200">
+                        answer “{project.labelColumn}” hidden
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setConfigOpen((v) => !v)}
+                    className="rounded-full border border-zinc-200 px-3 py-1 text-xs hover:bg-zinc-50"
+                  >
+                    {configOpen ? "Hide" : "Configure"}
+                  </button>
+                </div>
+                {!configOpen && project.featureColumns.length > 0 && (
+                  <div className="mt-2 text-xs text-zinc-500">Features shown: {project.featureColumns.join(", ")}</div>
+                )}
+                {configOpen && (
+                  <div className="mt-3 space-y-2">
+                    <div>
+                      <label className="text-xs font-medium text-zinc-700">Answer column (hidden from annotators)</label>
+                      <select
+                        value={labelColumnDraft}
+                        onChange={(e) => setLabelColumnDraft(e.target.value)}
+                        className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900"
+                      >
+                        <option value="">None — show every column</option>
+                        {datasetColumns.map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {datasetColumns.length > 0 && (
+                      <div>
+                        <span className="text-xs font-medium text-zinc-700">Features to label (all checked = everything except the answer)</span>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          {datasetColumns
+                            .filter((c) => c.toLowerCase() !== labelColumnDraft.toLowerCase() || !labelColumnDraft)
+                            .map((c) => {
+                              const checked = featureDraft.length === 0 || featureDraft.includes(c);
+                              return (
+                                <label key={c} className={`cursor-pointer rounded-full px-2.5 py-1 text-xs ring-1 ${checked ? "bg-zinc-900 text-white ring-zinc-900" : "bg-white text-zinc-500 ring-zinc-200"}`}>
+                                  <input
+                                    type="checkbox"
+                                    className="hidden"
+                                    checked={checked}
+                                    onChange={() => {
+                                      setFeatureDraft((prev) => {
+                                        const all = datasetColumns.filter((x) => x.toLowerCase() !== labelColumnDraft.toLowerCase() || !labelColumnDraft);
+                                        const current = prev.length === 0 ? all : prev;
+                                        const next = current.includes(c) ? current.filter((x) => x !== c) : [...current, c];
+                                        return next.length >= all.length ? [] : next;
+                                      });
+                                    }}
+                                  />
+                                  {c}
+                                </label>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={onSaveLabelConfig}
+                      disabled={configBusy}
+                      className={`rounded-full px-4 py-1.5 text-xs font-medium text-white ${configBusy ? "bg-zinc-400" : "bg-zinc-900 hover:bg-zinc-800"}`}
+                    >
+                      {configBusy ? "Saving…" : "Save column config"}
+                    </button>
+                  </div>
+                )}
+              </Card>
+            )}
+
             <Card className="mt-4">
               <label className="text-xs font-medium text-zinc-700" htmlFor="detail-review-comment">
                 Feedback for the annotator (optional, attached to your next approve/reject)
@@ -419,20 +550,25 @@ export default function ProjectDetailPage() {
                           className="mt-2 max-h-64 rounded-lg ring-1 ring-zinc-200"
                         />
                       )}
-                      {task.item && Object.keys(task.item.rowData).length > 0 ? (
-                        <dl className="mt-2 space-y-1 text-sm leading-6 text-zinc-900">
-                          {Object.entries(task.item.rowData).map(([key, value]) => (
-                            <div key={key} className="flex gap-2">
-                              <dt className="shrink-0 font-medium text-zinc-500">{key}:</dt>
-                              <dd className="whitespace-pre-wrap">{value || "—"}</dd>
-                            </div>
-                          ))}
-                        </dl>
-                      ) : (
-                        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-900">
-                          {task.item?.content || task.itemData || "(empty item)"}
-                        </p>
-                      )}
+                      {(() => {
+                        const rows = task.item
+                          ? visibleRowData(task.item.rowData, hidden, project?.featureColumns)
+                          : [];
+                        return rows.length > 0 ? (
+                          <dl className="mt-2 space-y-1 text-sm leading-6 text-zinc-900">
+                            {rows.map(([key, value]) => (
+                              <div key={key} className="flex gap-2">
+                                <dt className="shrink-0 font-medium text-zinc-500">{key}:</dt>
+                                <dd className="whitespace-pre-wrap">{value || "—"}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        ) : (
+                          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-900">
+                            {task.item?.content || task.itemData || "(empty item)"}
+                          </p>
+                        );
+                      })()}
                       {!locked && (
                         <div className="mt-3 flex gap-2">
                           <input

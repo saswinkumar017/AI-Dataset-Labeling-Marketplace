@@ -12,6 +12,9 @@ public record ProjectResponse(
         String instructions,
         String labelType,
         List<String> labels,
+        String labelColumn,
+        List<String> featureColumns,
+        List<String> hiddenColumns,
         ProjectStatus status,
         long totalTasks,
         long pendingTasks,
@@ -42,6 +45,11 @@ public record ProjectResponse(
                 project.getInstructions(),
                 project.getLabelType(),
                 List.copyOf(labels),
+                project.getLabelColumn(),
+                com.labelmate.labelmate.dto.DatasetItemResponse.parseColumns(
+                        project.getFeatureColumnsJson()),
+                com.labelmate.labelmate.dto.DatasetItemResponse.parseColumns(
+                        project.getHiddenColumnsJson()),
                 project.getStatus(),
                 counts.total(),
                 counts.pending(),

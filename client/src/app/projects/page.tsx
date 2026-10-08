@@ -5,7 +5,7 @@ import AppShell from "@/components/AppShell";
 import Card from "@/components/Card";
 import Badge from "@/components/Badge";
 import RequireAuth from "@/components/RequireAuth";
-import { assignTask, autoLabelTask, createProject, deleteProject, exportProject, friendlyDatasetError, friendlyExportError, friendlyProjectError, friendlyTaskError, generateProjectTasks, listDatasets, listProjectTasks, listProjects, updateProject, type DatasetResponse, type ProjectResponse, type TaskResponse } from "@/lib/api";
+import { assignTask, autoLabelTask, createProject, deleteProject, exportProject, friendlyDatasetError, friendlyExportError, friendlyProjectError, friendlyTaskError, generateProjectTasks, getDatasetColumns, listDatasets, listProjectTasks, listProjects, updateProject, type DatasetResponse, type ProjectResponse, type TaskResponse } from "@/lib/api";
 
 type FormState = {
   datasetId: string;
@@ -13,9 +13,11 @@ type FormState = {
   instructions: string;
   labelType: string;
   labels: string;
+  labelColumn: string;
+  featureColumns: string[];
 };
 
-const emptyForm: FormState = { datasetId: "", name: "", instructions: "", labelType: "", labels: "" };
+const emptyForm: FormState = { datasetId: "", name: "", instructions: "", labelType: "", labels: "", labelColumn: "", featureColumns: [] };
 
 function parseLabels(raw: string): string[] {
   return Array.from(
@@ -56,6 +58,24 @@ export default function ProjectsPage() {
   const [taskNotice, setTaskNotice] = useState<string | null>(null);
   const [bulkAiProjectId, setBulkAiProjectId] = useState<number | null>(null);
   const [bulkAiProgress, setBulkAiProgress] = useState<string | null>(null);
+  const [formColumns, setFormColumns] = useState<string[]>([]);
+  const [editColumns, setEditColumns] = useState<string[]>([]);
+
+  async function loadColumnsFor(datasetId: string, target: "create" | "edit") {
+    if (!datasetId || !Number.isInteger(Number(datasetId))) {
+      if (target === "create") setFormColumns([]);
+      else setEditColumns([]);
+      return;
+    }
+    try {
+      const cols = await getDatasetColumns(Number(datasetId));
+      if (target === "create") setFormColumns(cols.columns);
+      else setEditColumns(cols.columns);
+    } catch {
+      if (target === "create") setFormColumns([]);
+      else setEditColumns([]);
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -122,6 +142,8 @@ export default function ProjectsPage() {
       instructions: formState.instructions.trim() || null,
       labelType: formState.labelType.trim() || null,
       labels: labels.length > 0 ? labels : null,
+      labelColumn: formState.labelColumn.trim() || null,
+      featureColumns: formState.featureColumns.length > 0 ? formState.featureColumns : null,
     };
   }
 
@@ -343,7 +365,7 @@ export default function ProjectsPage() {
               ) : datasets.length === 0 ? (
                 <div className="mt-1 text-xs text-zinc-500">No datasets yet — create one on the Datasets page first.</div>
               ) : (
-                <select value={form.datasetId} onChange={(e) => setForm({ ...form, datasetId: e.target.value })} className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900">
+                <select value={form.datasetId} onChange={(e) => { setForm({ ...form, datasetId: e.target.value, labelColumn: "", featureColumns: [] }); void loadColumnsFor(e.target.value, "create"); }} className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900">
                   <option value="">Select a dataset…</option>
                   {datasets.map((d) => (
                     <option key={d.id} value={d.id}>{d.name} (#{d.id})</option>
@@ -368,6 +390,44 @@ export default function ProjectsPage() {
               <input value={form.labels} onChange={(e) => setForm({ ...form, labels: e.target.value })} placeholder="Positive, Negative, Neutral" className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-900" />
               <p className="mt-1 text-xs text-zinc-400">Comma-separated options annotators can pick from.</p>
             </div>
+            {formColumns.length > 0 && (
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+                <label className="text-xs font-medium text-zinc-700">Answer column (hidden while labeling)</label>
+                <select value={form.labelColumn} onChange={(e) => setForm({ ...form, labelColumn: e.target.value })} className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900">
+                  <option value="">None — show every column</option>
+                  {formColumns.map((c) => (
+                    <option key={c} value={c}>{c} — hide from annotators</option>
+                  ))}
+                </select>
+                <div className="mt-2">
+                  <span className="text-xs font-medium text-zinc-700">Features to label (unchecked columns stay hidden)</span>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {formColumns.filter((c) => c.toLowerCase() !== form.labelColumn.toLowerCase() || !form.labelColumn).map((c) => {
+                      const checked = form.featureColumns.length === 0 || form.featureColumns.includes(c);
+                      return (
+                        <label key={c} className={`cursor-pointer rounded-full px-2.5 py-1 text-xs ring-1 ${checked ? "bg-zinc-900 text-white ring-zinc-900" : "bg-white text-zinc-500 ring-zinc-200"}`}>
+                          <input
+                            type="checkbox"
+                            className="hidden"
+                            checked={checked}
+                            onChange={() => {
+                              setForm((prev) => {
+                                const all = formColumns.filter((x) => x.toLowerCase() !== (prev.labelColumn || "").toLowerCase() || !prev.labelColumn);
+                                const current = prev.featureColumns.length === 0 ? all : prev.featureColumns;
+                                const next = current.includes(c) ? current.filter((x) => x !== c) : [...current, c];
+                                return { ...prev, featureColumns: next.length >= all.length ? [] : next };
+                              });
+                            }}
+                          />
+                          {c}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-1 text-xs text-zinc-400">All checked (or untouched) means every non-answer column is shown — multi-feature rows keep each feature separate.</p>
+                </div>
+              </div>
+            )}
             <button type="submit" disabled={submitting || datasets.length === 0} className={`rounded-full px-5 py-2 text-sm font-medium text-white ${submitting || datasets.length === 0 ? "bg-zinc-400" : "bg-zinc-900 hover:bg-zinc-800"}`}>
               {submitting ? "Creating…" : "Create project"}
             </button>
@@ -399,6 +459,14 @@ export default function ProjectsPage() {
                   {p.labelType && (
                     <div className="mt-3 rounded-lg bg-zinc-50 p-2 text-xs text-zinc-600">
                       <div>labelType: {p.labelType}</div>
+                    </div>
+                  )}
+                  {p.labelColumn && (
+                    <div className="mt-2 text-xs text-zinc-500">
+                      Answer column <span className="font-medium text-amber-700">{p.labelColumn}</span> is hidden from annotators
+                      {p.featureColumns.length > 0 && (
+                        <span> · features: {p.featureColumns.join(", ")}</span>
+                      )}
                     </div>
                   )}
                   {p.labels && p.labels.length > 0 && (
@@ -443,7 +511,8 @@ export default function ProjectsPage() {
                     <button
                       onClick={() => {
                         setEditingId(p.id);
-                        setEditForm({ datasetId: String(p.datasetId), name: p.name, instructions: p.instructions ?? "", labelType: p.labelType ?? "", labels: (p.labels ?? []).join(", ") });
+                        setEditForm({ datasetId: String(p.datasetId), name: p.name, instructions: p.instructions ?? "", labelType: p.labelType ?? "", labels: (p.labels ?? []).join(", "), labelColumn: p.labelColumn ?? "", featureColumns: p.featureColumns ?? [] });
+                        void loadColumnsFor(String(p.datasetId), "edit");
                       }}
                       className="rounded-full border border-zinc-200 px-3 py-1 text-xs hover:bg-zinc-50"
                     >
@@ -551,6 +620,40 @@ export default function ProjectsPage() {
                       <textarea value={editForm.instructions} onChange={(e) => setEditForm({ ...editForm, instructions: e.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" placeholder="Instructions" rows={2} maxLength={2000} />
                       <input value={editForm.labelType} onChange={(e) => setEditForm({ ...editForm, labelType: e.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" placeholder="Label type" maxLength={50} />
                       <input value={editForm.labels} onChange={(e) => setEditForm({ ...editForm, labels: e.target.value })} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm" placeholder="Labels, comma-separated (adds new ones)" />
+                      {editColumns.length > 0 && (
+                        <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-2">
+                          <label className="text-xs font-medium text-zinc-700">Answer column (hidden while labeling)</label>
+                          <select value={editForm.labelColumn} onChange={(e) => setEditForm({ ...editForm, labelColumn: e.target.value })} className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-900">
+                            <option value="">None — show every column</option>
+                            {editColumns.map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </select>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {editColumns.filter((c) => c.toLowerCase() !== editForm.labelColumn.toLowerCase() || !editForm.labelColumn).map((c) => {
+                              const checked = editForm.featureColumns.length === 0 || editForm.featureColumns.includes(c);
+                              return (
+                                <label key={c} className={`cursor-pointer rounded-full px-2.5 py-1 text-xs ring-1 ${checked ? "bg-zinc-900 text-white ring-zinc-900" : "bg-white text-zinc-500 ring-zinc-200"}`}>
+                                  <input
+                                    type="checkbox"
+                                    className="hidden"
+                                    checked={checked}
+                                    onChange={() => {
+                                      setEditForm((prev) => {
+                                        const all = editColumns.filter((x) => x.toLowerCase() !== (prev.labelColumn || "").toLowerCase() || !prev.labelColumn);
+                                        const current = prev.featureColumns.length === 0 ? all : prev.featureColumns;
+                                        const next = current.includes(c) ? current.filter((x) => x !== c) : [...current, c];
+                                        return { ...prev, featureColumns: next.length >= all.length ? [] : next };
+                                      });
+                                    }}
+                                  />
+                                  {c}
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                       <div className="flex gap-2">
                         <button onClick={() => onUpdate(p.id, p.datasetId)} className="rounded-full bg-zinc-900 px-4 py-1.5 text-xs font-medium text-white hover:bg-zinc-800">Save</button>
                         <button onClick={() => setEditingId(null)} className="rounded-full border border-zinc-200 px-4 py-1.5 text-xs hover:bg-zinc-50">Cancel</button>

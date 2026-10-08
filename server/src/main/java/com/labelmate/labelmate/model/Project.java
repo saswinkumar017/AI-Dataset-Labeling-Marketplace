@@ -38,6 +38,32 @@ public class Project {
     @Column(name = "label_type", length = 50)
     private String labelType;
 
+    /**
+     * Dataset column holding the ground-truth answer for this project (e.g.
+     * {@code "rating"}). It is hidden from every labeling read — task items,
+     * AI prompts, the workspace — so annotators never see the answer before
+     * labeling. Null/blank falls back to the dataset's own label column.
+     */
+    @Column(name = "label_column", length = 100)
+    private String labelColumn;
+
+    /**
+     * Explicit allowlist of dataset columns shown as labeling features, as a
+     * JSON array string (e.g. {@code ["review_title","review_text"]}).
+     * Null/blank means "every dataset column except the hidden ones", so
+     * single-feature and multi-feature datasets both work with no config.
+     */
+    @Column(name = "feature_columns_json", columnDefinition = "TEXT")
+    private String featureColumnsJson;
+
+    /**
+     * Extra dataset columns to hide from labeling reads (in addition to the
+     * label column), as a JSON array string. Useful for internal ids or
+     * metadata annotators must not see.
+     */
+    @Column(name = "hidden_columns_json", columnDefinition = "TEXT")
+    private String hiddenColumnsJson;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private ProjectStatus status;
@@ -101,6 +127,30 @@ public class Project {
 
     public void setLabelType(String labelType) {
         this.labelType = labelType;
+    }
+
+    public String getLabelColumn() {
+        return labelColumn;
+    }
+
+    public void setLabelColumn(String labelColumn) {
+        this.labelColumn = labelColumn;
+    }
+
+    public String getFeatureColumnsJson() {
+        return featureColumnsJson;
+    }
+
+    public void setFeatureColumnsJson(String featureColumnsJson) {
+        this.featureColumnsJson = featureColumnsJson;
+    }
+
+    public String getHiddenColumnsJson() {
+        return hiddenColumnsJson;
+    }
+
+    public void setHiddenColumnsJson(String hiddenColumnsJson) {
+        this.hiddenColumnsJson = hiddenColumnsJson;
     }
 
     public ProjectStatus getStatus() {

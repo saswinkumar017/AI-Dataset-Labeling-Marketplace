@@ -102,8 +102,6 @@ class TaskGenerationServiceTest {
         when(tasks.findDatasetItemIdsByProjectId(10L)).thenReturn(List.of(101L));
         when(datasetItems.findByDatasetId(any(Long.class), any(Pageable.class)))
                 .thenReturn(new PageImpl(List.of(first, second, third)));
-        when(datasetItemService.renderItemForLabeling(any(DatasetItem.class)))
-                .thenAnswer(invocation -> ((DatasetItem) invocation.getArgument(0)).getContent());
         when(tasks.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         List<TaskResponse> created = taskService.generateTasks(10L, "owner@example.com");

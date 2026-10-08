@@ -15,6 +15,9 @@ public record DatasetResponse(
         Long fileSizeBytes,
         String checksumSha256,
         List<String> columns,
+        List<FeatureDef> features,
+        String datasetType,
+        String labelColumn,
         long itemCount,
         LocalDateTime createdAt,
         LocalDateTime updatedAt) {
@@ -34,6 +37,9 @@ public record DatasetResponse(
                 dataset.getFileSizeBytes(),
                 dataset.getChecksumSha256(),
                 DatasetItemResponse.parseColumns(dataset.getColumnsJson()),
+                DatasetItemResponse.parseFeatures(dataset.getFeaturesJson()),
+                dataset.getDatasetType(),
+                dataset.getLabelColumn(),
                 itemCount,
                 dataset.getCreatedAt(),
                 dataset.getUpdatedAt());

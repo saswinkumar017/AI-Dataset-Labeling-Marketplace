@@ -95,6 +95,7 @@ public class ProjectService {
                 dataset, owner, request.name().trim(), ProjectStatus.DRAFT, LocalDateTime.now());
         project.setInstructions(request.instructions());
         project.setLabelType(request.labelType());
+        applyLabelConfig(project, dataset, request.labelColumn(), request.featureColumns(), request.hiddenColumns());
         Project saved = projects.save(project);
         List<String> scheme = syncLabels(saved, request.labels());
         taskService.generateTasks(saved.getId(), ownerEmail);
@@ -166,8 +167,102 @@ public class ProjectService {
         project.setInstructions(request.instructions());
         project.setLabelType(request.labelType());
         project.setUpdatedAt(LocalDateTime.now());
+        applyLabelConfig(project, project.getDataset(),
+                request.labelColumn(), request.featureColumns(), request.hiddenColumns());
         Project saved = projects.save(project);
         return ProjectResponse.from(saved, syncLabels(saved, request.labels()), taskCounts(saved.getId()));
+    }
+
+    /**
+     * Reconfigures which dataset columns a project labels — and which it
+     * hides. The label (answer) column is hidden from every labeling read so
+     * annotators never see the correct label before doing the work; feature
+     * columns select the multi-feature subset shown (blank = all except
+     * hidden); hidden columns drop internal ids/metadata. Exports always
+     * keep every column. Unknown columns are rejected so typos fail loudly
+     * instead of silently hiding nothing.
+     */
+    @Transactional
+    public ProjectResponse updateLabelConfig(
+            Long id,
+            com.labelmate.labelmate.dto.ProjectLabelConfigRequest request,
+            String ownerEmail) {
+        Project project = loadOwned(id, ownerEmail);
+        applyLabelConfig(project, project.getDataset(),
+                request == null ? null : request.labelColumn(),
+                request == null ? null : request.featureColumns(),
+                request == null ? null : request.hiddenColumns());
+        project.setUpdatedAt(LocalDateTime.now());
+        Project saved = projects.save(project);
+        return ProjectResponse.from(saved, labelNames(saved.getId()), taskCounts(saved.getId()));
+    }
+
+    private void applyLabelConfig(
+            Project project, Dataset dataset, String labelColumn,
+            java.util.List<String> featureColumns, java.util.List<String> hiddenColumns) {
+        java.util.List<String> datasetColumns = dataset != null
+                ? com.labelmate.labelmate.dto.DatasetItemResponse.parseColumns(dataset.getColumnsJson())
+                : java.util.List.of();
+        if (labelColumn != null) {
+            String clean = labelColumn.strip();
+            if (!clean.isEmpty() && !datasetColumns.isEmpty() && !containsIgnoreCase(datasetColumns, clean)) {
+                throw new ApiException(HttpStatus.BAD_REQUEST,
+                        "labelColumn must name an existing dataset column: " + String.join(", ", datasetColumns));
+            }
+            project.setLabelColumn(clean.isEmpty() ? null : clean);
+        }
+        if (featureColumns != null) {
+            java.util.List<String> cleaned = cleanColumnList(featureColumns);
+            if (!cleaned.isEmpty() && !datasetColumns.isEmpty()) {
+                for (String column : cleaned) {
+                    if (!containsIgnoreCase(datasetColumns, column)) {
+                        throw new ApiException(HttpStatus.BAD_REQUEST,
+                                "unknown feature column '" + column + "' — dataset has: "
+                                        + String.join(", ", datasetColumns));
+                    }
+                }
+            }
+            project.setFeatureColumnsJson(cleaned.isEmpty() ? null : writeStringList(cleaned));
+        }
+        if (hiddenColumns != null) {
+            java.util.List<String> cleaned = cleanColumnList(hiddenColumns);
+            project.setHiddenColumnsJson(cleaned.isEmpty() ? null : writeStringList(cleaned));
+        }
+    }
+
+    private java.util.List<String> cleanColumnList(java.util.List<String> requested) {
+        java.util.List<String> cleaned = new java.util.ArrayList<>();
+        if (requested == null) {
+            return cleaned;
+        }
+        for (String raw : requested) {
+            if (raw == null || raw.isBlank()) {
+                continue;
+            }
+            String name = raw.strip();
+            boolean duplicate = cleaned.stream().anyMatch(existing -> existing.equalsIgnoreCase(name));
+            if (!duplicate) {
+                cleaned.add(name);
+            }
+        }
+        return cleaned;
+    }
+
+    private boolean containsIgnoreCase(java.util.List<String> names, String candidate) {
+        for (String name : names) {
+            if (name.equalsIgnoreCase(candidate)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String writeStringList(java.util.List<String> values) {
+        try {
+            return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(values);
+        } catch (Exception ex) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "JSON encoding failed");
+        }
     }
 
     /**

@@ -4,7 +4,9 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.labelmate.labelmate.dto.DatasetItemResponse;
 import com.labelmate.labelmate.dto.DatasetItemsRequest;
+import com.labelmate.labelmate.dto.DatasetSchemaRequest;
 import com.labelmate.labelmate.dto.DatasetTableRequest;
+import com.labelmate.labelmate.dto.FeatureDef;
 import com.labelmate.labelmate.dto.TableIngestResult;
 import com.labelmate.labelmate.exception.ApiException;
 import com.labelmate.labelmate.model.Dataset;
@@ -80,6 +82,7 @@ public class DatasetItemService {
         if (batch.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "No usable items provided");
         }
+        touchDatasetType(dataset, "TEXT");
         return items.saveAll(batch).stream().map(DatasetItemResponse::from).toList();
     }
 
@@ -115,6 +118,10 @@ public class DatasetItemService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Too many columns (max " + MAX_TABLE_COLUMNS + ")");
         }
         dataset.setColumnsJson(writeJson(merged));
+        mergeFeatureDefs(dataset, merged);
+        if ((dataset.getDatasetType() == null || dataset.getDatasetType().isBlank()) && merged.size() > 1) {
+            dataset.setDatasetType("TABULAR");
+        }
         datasets.save(dataset);
 
         List<DatasetItem> batch = new ArrayList<>(WRITE_CHUNK);
@@ -184,6 +191,7 @@ public class DatasetItemService {
             item.setMediaType(image.mediaType());
             batch.add(item);
         }
+        touchDatasetType(dataset, "IMAGE");
         return items.saveAll(batch).stream().map(DatasetItemResponse::from).toList();
     }
 
@@ -209,6 +217,88 @@ public class DatasetItemService {
     public List<String> columns(Long datasetId, String userEmail) {
         Dataset dataset = loadReadableDataset(datasetId, loadUser(userEmail));
         return parseColumns(dataset.getColumnsJson());
+    }
+
+    /**
+     * Replaces the dataset's typed feature schema, kind, and ground-truth
+     * column. New feature names join the dataset header (preserving order)
+     * so a multi-feature schema can be declared before any rows arrive; the
+     * label column must name an existing column (or be blank to clear it).
+     * Labeling reads hide the label column, never storage or exports.
+     */
+    @Transactional
+    public List<FeatureDef> updateSchema(Long datasetId, DatasetSchemaRequest request, String userEmail) {
+        Dataset dataset = loadOwnedDataset(datasetId, userEmail);
+        List<FeatureDef> cleaned = cleanFeatures(request == null ? null : request.features());
+        List<String> merged = new ArrayList<>(parseColumns(dataset.getColumnsJson()));
+        for (FeatureDef feature : cleaned) {
+            if (!containsIgnoreCase(merged, feature.name())) {
+                if (merged.size() >= MAX_TABLE_COLUMNS) {
+                    throw new ApiException(HttpStatus.BAD_REQUEST,
+                            "Too many columns (max " + MAX_TABLE_COLUMNS + ")");
+                }
+                merged.add(feature.name().strip());
+            }
+        }
+        String labelColumn = request == null || request.labelColumn() == null
+                ? null
+                : request.labelColumn().strip();
+        if (labelColumn != null && labelColumn.isEmpty()) {
+            labelColumn = null;
+        }
+        if (labelColumn != null && !merged.isEmpty() && !containsIgnoreCase(merged, labelColumn)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST,
+                    "labelColumn must name an existing column: " + String.join(", ", merged));
+        }
+        dataset.setColumnsJson(merged.isEmpty() ? null : writeJson(merged));
+        dataset.setFeaturesJson(cleaned.isEmpty() ? null : writeJson(cleaned));
+        dataset.setLabelColumn(labelColumn);
+        if (request != null && request.datasetType() != null && !request.datasetType().isBlank()) {
+            dataset.setDatasetType(request.datasetType().strip().toUpperCase());
+        } else if ((dataset.getDatasetType() == null || dataset.getDatasetType().isBlank())
+                && merged.size() > 1) {
+            dataset.setDatasetType("TABULAR");
+        }
+        datasets.save(dataset);
+        return List.copyOf(cleaned);
+    }
+
+    /**
+     * Adds one named feature column (with a type) to a dataset header without
+     * ingesting rows — the entry point for building multi-feature text
+     * datasets column by column from the UI.
+     */
+    @Transactional
+    public List<FeatureDef> addFeatureColumn(Long datasetId, FeatureDef feature, String userEmail) {
+        if (feature == null || feature.name() == null || feature.name().isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "feature name is required");
+        }
+        String name = feature.name().strip();
+        Dataset dataset = loadOwnedDataset(datasetId, userEmail);
+        List<String> merged = new ArrayList<>(parseColumns(dataset.getColumnsJson()));
+        if (!containsIgnoreCase(merged, name)) {
+            if (merged.size() >= MAX_TABLE_COLUMNS) {
+                throw new ApiException(HttpStatus.BAD_REQUEST,
+                        "Too many columns (max " + MAX_TABLE_COLUMNS + ")");
+            }
+            merged.add(name);
+        }
+        dataset.setColumnsJson(writeJson(merged));
+        List<FeatureDef> defs = new ArrayList<>(parseFeatures(dataset.getFeaturesJson()));
+        defs.removeIf(existing -> existing.name().equalsIgnoreCase(name));
+        defs.add(new FeatureDef(name, feature.normalizedType()));
+        dataset.setFeaturesJson(writeJson(defs));
+        if ((dataset.getDatasetType() == null || dataset.getDatasetType().isBlank()) && merged.size() > 1) {
+            dataset.setDatasetType("TABULAR");
+        }
+        datasets.save(dataset);
+        return List.copyOf(defs);
+    }
+
+    @Transactional(readOnly = true)
+    public List<FeatureDef> features(Long datasetId, String userEmail) {
+        Dataset dataset = loadReadableDataset(datasetId, loadUser(userEmail));
+        return parseFeatures(dataset.getFeaturesJson());
     }
 
     /**
@@ -267,6 +357,89 @@ public class DatasetItemService {
             return parsed == null ? new ArrayList<>() : new ArrayList<>(parsed);
         } catch (Exception ex) {
             return new ArrayList<>();
+        }
+    }
+
+    List<FeatureDef> parseFeatures(String json) {
+        if (json == null || json.isBlank()) {
+            return new ArrayList<>();
+        }
+        try {
+            List<FeatureDef> parsed = objectMapper.readValue(json, new TypeReference<List<FeatureDef>>() {});
+            return parsed == null ? new ArrayList<>() : new ArrayList<>(parsed);
+        } catch (Exception ex) {
+            return new ArrayList<>();
+        }
+    }
+
+    /** Registers freshly seen columns as untyped TEXT features, preserving order. */
+    private void mergeFeatureDefs(Dataset dataset, List<String> merged) {
+        List<FeatureDef> defs = new ArrayList<>(parseFeatures(dataset.getFeaturesJson()));
+        boolean changed = false;
+        for (String column : merged) {
+            boolean known = false;
+            for (FeatureDef def : defs) {
+                if (def.name().equalsIgnoreCase(column)) {
+                    known = true;
+                    break;
+                }
+            }
+            if (!known) {
+                defs.add(new FeatureDef(column, "TEXT"));
+                changed = true;
+            }
+        }
+        if (changed || !defs.isEmpty()) {
+            dataset.setFeaturesJson(writeJson(defs));
+        }
+    }
+
+    private List<FeatureDef> cleanFeatures(List<FeatureDef> requested) {
+        List<FeatureDef> cleaned = new ArrayList<>();
+        if (requested == null) {
+            return cleaned;
+        }
+        for (FeatureDef feature : requested) {
+            if (feature == null || feature.name() == null || feature.name().isBlank()) {
+                continue;
+            }
+            String name = feature.name().strip();
+            boolean duplicate = false;
+            for (FeatureDef existing : cleaned) {
+                if (existing.name().equalsIgnoreCase(name)) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (!duplicate) {
+                cleaned.add(new FeatureDef(name, feature.normalizedType()));
+            }
+        }
+        return cleaned;
+    }
+
+    private boolean containsIgnoreCase(List<String> names, String candidate) {
+        for (String name : names) {
+            if (name.equalsIgnoreCase(candidate)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Records the dataset kind on first ingest (TEXT/IMAGE) and upgrades to
+     * MIXED when a second kind arrives — the UI uses it to pick the right
+     * ingest widgets for multi-type datasets.
+     */
+    private void touchDatasetType(Dataset dataset, String kind) {
+        String current = dataset.getDatasetType();
+        if (current == null || current.isBlank()) {
+            dataset.setDatasetType(kind);
+            datasets.save(dataset);
+        } else if (!current.equalsIgnoreCase(kind) && !"MIXED".equalsIgnoreCase(current)) {
+            dataset.setDatasetType("MIXED");
+            datasets.save(dataset);
         }
     }
 
