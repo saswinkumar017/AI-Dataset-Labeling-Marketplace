@@ -106,6 +106,12 @@ describe("friendlyAiError", () => {
     }
   });
 
+  it("surfaces the backend's precise AI reason when present", () => {
+    expect(friendlyAiError(axiosError(502, "AI suggested a label outside the project scheme"))).toContain(
+      "AI suggested a label outside the project scheme"
+    );
+  });
+
   it("asks for candidate labels on bad requests", () => {
     expect(friendlyAiError(axiosError(400))).toContain("candidate labels");
   });

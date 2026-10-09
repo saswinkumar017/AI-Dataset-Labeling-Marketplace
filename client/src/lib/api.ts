@@ -658,13 +658,19 @@ export type SuggestionResponse = {
 };
 
 export async function suggestLabel(taskId: number, labels: string[]) {
-  const res = await api.post<SuggestionResponse>(`/api/tasks/${taskId}/suggest`, { labels });
+  const res = await api.post<SuggestionResponse>(`/api/tasks/${taskId}/suggest`, { labels }, {
+    // AI providers routinely take longer than the 10s global default;
+    // the backend itself waits up to AI_REQUEST_TIMEOUT_SECONDS (30s).
+    timeout: 120000,
+  });
   return res.data;
 }
 
 export async function autoLabelTask(taskId: number, confidence?: number | null) {
   const res = await api.post<AnnotationResponse>(`/api/ai/tasks/${taskId}/auto-label`, {
     confidence: confidence ?? null,
+  }, {
+    timeout: 120000,
   });
   return res.data;
 }
@@ -676,8 +682,13 @@ export function friendlyAiError(error: unknown): string {
     if (status === 401) return "Session expired. Please sign in again.";
     if (status === 404) return "Task not found or you do not have access.";
     if (status === 400) return backendMessage ?? "Add candidate labels (1-50) and try again.";
-    if (status === 503 || status === 502 || status === 504)
-      return "AI assistance is unavailable right now — you can still label manually.";
+    if (status === 503 || status === 502 || status === 504) {
+      // Surface the backend's precise reason (e.g. "AI suggested a label
+      // outside the project scheme") — it tells you whether to retry, fix
+      // labels, or configure the provider, instead of a dead-end message.
+      const detail = backendMessage ? ` — ${backendMessage}` : "";
+      return `AI assistance is unavailable right now${detail} — you can still label manually.`;
+    }
     if (error.code === "ECONNABORTED") return "Request timed out. Please try again.";
     if (error.message === "Network Error") return "Cannot reach the server. Is the backend running and is this page origin allowed (CORS)?";
     return backendMessage ?? "Something went wrong. Please try again.";

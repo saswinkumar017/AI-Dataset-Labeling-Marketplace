@@ -100,6 +100,38 @@ class LabelSuggestionServiceTest {
     }
 
     @Test
+    void shouldAcceptAnswerWrappedInProseWhenOneLineExactlyMatchesScheme() {
+        when(aiClient.complete(anyString(), anyString()))
+                .thenReturn("My analysis is done.\nPositive\n87");
+
+        SuggestionResult result = suggestionService.suggest("I love it.", scheme(), null);
+
+        assertEquals("Positive", result.suggestedLabel());
+        assertEquals(new BigDecimal("87.00"), result.confidence());
+    }
+
+    @Test
+    void shouldAcceptBracketedLabelCopiedFromPromptFormat() {
+        when(aiClient.complete(anyString(), anyString())).thenReturn("[Positive]\n84");
+
+        SuggestionResult result = suggestionService.suggest("I love it.", scheme(), null);
+
+        assertEquals("Positive", result.suggestedLabel());
+        assertEquals(new BigDecimal("84.00"), result.confidence());
+    }
+
+    @Test
+    void shouldStillRejectProseThatNeverStatesALabelExactly() {
+        when(aiClient.complete(anyString(), anyString()))
+                .thenReturn("I am fairly Positive about this one.\n90");
+
+        AiException ex = assertThrows(
+                AiException.class, () -> suggestionService.suggest("I love it.", scheme(), null));
+
+        assertEquals(AiException.Reason.INVALID_RESPONSE, ex.getReason());
+    }
+
+    @Test
     void shouldRejectEmptyModelOutput() {
         when(aiClient.complete(anyString(), anyString())).thenReturn("  ");
 
@@ -171,8 +203,7 @@ class LabelSuggestionServiceTest {
 
         ArgumentCaptor<String> system = ArgumentCaptor.forClass(String.class);
         verify(aiClient).complete(system.capture(), anyString());
-        assertTrue(system.getValue().contains("[Positive]"));
-        assertTrue(system.getValue().contains("[Negative]"));
-        assertTrue(system.getValue().contains("[Neutral]"));
+        assertTrue(system.getValue().contains("Positive"));
+        assertTrue(system.getValue().contains("no brackets"));
     }
 }
